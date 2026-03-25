@@ -61,6 +61,8 @@ export interface Order {
   date: string;
   buyerPhone?: string;
   buyerAddress?: string;
+  trackingNumber?: string;
+  shippingCarrier?: string;
 }
 
 export interface Subscription {

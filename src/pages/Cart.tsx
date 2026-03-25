@@ -4,13 +4,17 @@ import { useAppContext } from '../context/AppContext';
 import { Trash2, ShoppingBag, ArrowRight, CreditCard, AlertTriangle } from 'lucide-react';
 
 export const Cart: React.FC = () => {
-  const { cart, removeFromCart, placeOrder, currentUser } = useAppContext();
+  const { cart, removeFromCart, placeOrder, currentUser, stores } = useAppContext();
   const navigate = useNavigate();
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
   const [buyerPhone, setBuyerPhone] = useState('');
   const [buyerAddress, setBuyerAddress] = useState('');
+
+  const firstItemStoreId = cart[0]?.product.storeId;
+  const store = stores.find(s => s.id === firstItemStoreId);
+  const sellerPhone = store?.phone ? store.phone.replace(/[^0-9]/g, '') : '9647XXXXXXXXX';
 
   // Block navigation if cart has items and not submitting order
   const blocker = useBlocker(
@@ -155,7 +159,7 @@ export const Cart: React.FC = () => {
               </div>
               <div className="border-t border-gray-100 pt-4 mt-4">
                 <a 
-                  href={`https://wa.me/9647XXXXXXXXX?text=${encodeURIComponent(`مرحباً، أرغب في إتمام طلب شراء المنتجات التالية:\n${cart.map(item => `- ${item.product.name} (الكمية: ${item.quantity})`).join('\n')}\nالإجمالي: ${total} د.ع\n\nالعنوان: ${buyerAddress}\nرقم الهاتف: ${buyerPhone}`)}`}
+                  href={`https://wa.me/${sellerPhone}?text=${encodeURIComponent(`مرحباً، أرغب في إتمام طلب شراء المنتجات التالية:\n${cart.map(item => `- ${item.product.name} (الكمية: ${item.quantity})`).join('\n')}\nالإجمالي: ${total} د.ع\n\nالعنوان: ${buyerAddress}\nرقم الهاتف: ${buyerPhone}`)}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors mt-2"
@@ -212,7 +216,7 @@ export const Cart: React.FC = () => {
                 مراجعة
               </button>
               <a 
-                href={`https://wa.me/9647XXXXXXXXX?text=${encodeURIComponent(`مرحباً، أرغب في إتمام طلب شراء المنتجات التالية:\n${cart.map(item => `- ${item.product.name} (الكمية: ${item.quantity})`).join('\n')}\nالإجمالي: ${total} د.ع\n\nالعنوان: ${buyerAddress}\nرقم الهاتف: ${buyerPhone}`)}`}
+                href={`https://wa.me/${sellerPhone}?text=${encodeURIComponent(`مرحباً، أرغب في إتمام طلب شراء المنتجات التالية:\n${cart.map(item => `- ${item.product.name} (الكمية: ${item.quantity})`).join('\n')}\nالإجمالي: ${total} د.ع\n\nالعنوان: ${buyerAddress}\nرقم الهاتف: ${buyerPhone}`)}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={confirmOrderPlacement}

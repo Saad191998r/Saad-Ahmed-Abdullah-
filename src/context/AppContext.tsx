@@ -307,7 +307,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const updateStore = async (store: Store) => {
     try {
-      await updateDoc(doc(db, 'stores', store.id), { ...store });
+      const storeData = Object.fromEntries(
+        Object.entries(store).filter(([_, v]) => v !== undefined)
+      );
+      await updateDoc(doc(db, 'stores', store.id), storeData);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `stores/${store.id}`);
     }
@@ -355,7 +358,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const updateProduct = async (product: Product) => {
     try {
-      await updateDoc(doc(db, 'products', product.id), { ...product });
+      const productData = Object.fromEntries(
+        Object.entries(product).filter(([_, v]) => v !== undefined)
+      );
+      await updateDoc(doc(db, 'products', product.id), productData);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `products/${product.id}`);
     }
@@ -425,7 +431,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const updateProfile = async (user: User) => {
     try {
-      await updateDoc(doc(db, 'users', user.id), { ...user });
+      const userData = Object.fromEntries(
+        Object.entries(user).filter(([_, v]) => v !== undefined)
+      );
+      await updateDoc(doc(db, 'users', user.id), userData);
       if (currentUser?.id === user.id) {
         setCurrentUser(user);
       }
@@ -535,7 +544,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const updateOffer = async (offer: Offer) => {
     try {
-      await updateDoc(doc(db, 'offers', offer.id), { ...offer });
+      const offerData = Object.fromEntries(
+        Object.entries(offer).filter(([_, v]) => v !== undefined)
+      );
+      await updateDoc(doc(db, 'offers', offer.id), offerData);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `offers/${offer.id}`);
     }

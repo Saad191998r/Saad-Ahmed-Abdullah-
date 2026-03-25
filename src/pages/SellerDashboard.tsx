@@ -4,6 +4,7 @@ import { useAppContext } from '../context/AppContext';
 import { Package, Plus, Edit, Trash2, TrendingUp, ShoppingBag, CreditCard, CheckCircle, Store as StoreIcon, Settings, Upload, AlertCircle, ArrowLeft, Star, Tag, Calendar, Eye, MessageCircle, AlertTriangle } from 'lucide-react';
 import { Product, Offer } from '../types';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from 'recharts';
+import { ConfirmModal } from '../components/ConfirmModal';
 
 export const SellerDashboard: React.FC = () => {
   const { currentUser, stores, products, orders, subscriptions, updateOrderStatus, addStore, addProduct, updateProduct, deleteProduct, updateStore, offers, addOffer, deleteOffer, toggleOfferStatus, paySubscription, cancelSubscription } = useAppContext();
@@ -11,6 +12,7 @@ export const SellerDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'overview' | 'products' | 'orders' | 'subscription' | 'settings' | 'performance' | 'offers'>(
     (location.state as any)?.tab || 'overview'
   );
+  const [confirmCancelOrder, setConfirmCancelOrder] = useState<{ isOpen: boolean; orderId: string | null }>({ isOpen: false, orderId: null });
 
   useEffect(() => {
     if ((location.state as any)?.tab) {
@@ -737,23 +739,32 @@ export const SellerDashboard: React.FC = () => {
                         </div>
                       )}
                     </div>
-                    <select 
-                      value={order.status}
-                      onChange={(e) => updateOrderStatus(order.id, e.target.value as any)}
-                      className={`text-sm font-medium px-3 py-1.5 rounded-lg border outline-none ${
-                        order.status === 'delivered' ? 'bg-green-50 text-green-700 border-green-200' :
-                        order.status === 'shipped' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
-                        order.status === 'processing' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                        order.status === 'new' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
-                        'bg-red-50 text-red-700 border-red-200'
-                      }`}
-                    >
-                      <option value="new">جديد</option>
-                      <option value="processing">قيد التنفيذ</option>
-                      <option value="shipped">تم الشحن</option>
-                      <option value="delivered">تم التسليم</option>
-                      <option value="cancelled">ملغي</option>
-                    </select>
+                    <div className="flex items-center gap-2">
+                      <select 
+                        value={order.status}
+                        onChange={(e) => updateOrderStatus(order.id, e.target.value as any)}
+                        className={`text-sm font-medium px-3 py-1.5 rounded-lg border outline-none ${
+                          order.status === 'delivered' ? 'bg-green-50 text-green-700 border-green-200' :
+                          order.status === 'shipped' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
+                          order.status === 'processing' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                          order.status === 'new' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
+                          'bg-red-50 text-red-700 border-red-200'
+                        }`}
+                      >
+                        <option value="new">جديد</option>
+                        <option value="processing">قيد التنفيذ</option>
+                        <option value="shipped">تم الشحن</option>
+                        <option value="delivered">تم التسليم</option>
+                      </select>
+                      {order.status !== 'cancelled' && (
+                        <button 
+                          onClick={() => setConfirmCancelOrder({ isOpen: true, orderId: order.id })}
+                          className="text-xs font-medium px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition-colors"
+                        >
+                          إلغاء الطلب
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="border-t border-gray-50 pt-4">
                     <div className="text-sm text-gray-600 mb-4 font-medium">تفاصيل المنتجات:</div>
@@ -824,7 +835,7 @@ export const SellerDashboard: React.FC = () => {
                     <button 
                       onClick={() => {
                         paySubscription(currentUser!.id);
-                        window.open('https://wa.me/9647700000000', '_blank');
+                        window.open('https://wa.me/9647819741646', '_blank');
                       }}
                       className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-colors mt-4"
                     >
@@ -840,7 +851,7 @@ export const SellerDashboard: React.FC = () => {
                 <button 
                   onClick={() => {
                     paySubscription(currentUser!.id);
-                    window.open('https://wa.me/9647700000000', '_blank');
+                    window.open('https://wa.me/9647819741646', '_blank');
                   }}
                   className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-colors mt-4"
                 >
@@ -1365,6 +1376,18 @@ export const SellerDashboard: React.FC = () => {
           </div>
         </div>
       )}
+
+      <ConfirmModal 
+        isOpen={confirmCancelOrder.isOpen}
+        onClose={() => setConfirmCancelOrder({ isOpen: false, orderId: null })}
+        onConfirm={() => {
+          if (confirmCancelOrder.orderId) {
+            updateOrderStatus(confirmCancelOrder.orderId, 'cancelled');
+          }
+        }}
+        title="إلغاء الطلب"
+        message="هل أنت متأكد أنك تريد إلغاء هذا الطلب؟"
+      />
     </div>
   );
 };

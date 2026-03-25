@@ -151,7 +151,11 @@ export const StoreView: React.FC = () => {
                   <span className="flex items-center gap-1"><Users className="h-4 w-4" /> {store.followers?.length || 0} متابع</span>
                   <span className="flex items-center gap-1"><ShoppingBag className="h-4 w-4" /> {totalOrders} طلب</span>
                   {store.location && <span className="flex items-center gap-1"><MapPin className="h-4 w-4" /> {store.location}</span>}
-                  {store.phone && <span className="flex items-center gap-1" dir="ltr"><Phone className="h-4 w-4" /> {store.phone}</span>}
+                  {store.phone && (
+                    <a href={`https://wa.me/${store.phone.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-green-600 hover:text-green-700" dir="ltr">
+                      <Phone className="h-4 w-4" /> {store.phone}
+                    </a>
+                  )}
                 </div>
               </div>
               <div className="flex gap-2">
