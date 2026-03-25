@@ -1,0 +1,170 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isStoreOwner(storeId) {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/stores/$(storeId)) && 
+             get(/databases/$(database)/documents/stores/$(storeId)).data.ownerId == request.auth.uid;
+    }
+
+    function isChatParticipant(chatId) {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/chats/$(chatId)) && 
+             request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && request.auth.token.email == "saad1998ahmedgg@gmail.com";
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    
+    function isValidUser(data) {
+      return data.keys().hasAll(['name', 'type']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.type in ['buyer', 'seller', 'admin'];
+    }
+
+    function isValidStore(data) {
+      return data.keys().hasAll(['ownerId', 'name', 'description', 'logoUrl', 'coverUrl']) &&
+             data.ownerId == request.auth.uid &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.description is string && data.description.size() < 2000;
+    }
+
+    function isValidProduct(data) {
+      return data.keys().hasAll(['storeId', 'name', 'price', 'description', 'images']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
+             data.price is number && data.price >= 0 &&
+             data.description is string && data.description.size() < 5000 &&
+             data.images is list && data.images.size() <= 10;
+    }
+
+    function isValidOrder(data) {
+      return data.keys().hasAll(['buyerId', 'storeId', 'items', 'total', 'status', 'date']) &&
+             data.buyerId == request.auth.uid &&
+             data.total is number && data.total >= 0 &&
+             data.status in ['new', 'processing', 'shipped', 'delivered', 'cancelled'];
+    }
+
+    function isValidSubscription(data) {
+      return data.keys().hasAll(['sellerId', 'status', 'renewalDate']) &&
+             data.sellerId == request.auth.uid &&
+             data.status in ['active', 'inactive'];
+    }
+
+    function isValidNotification(data) {
+      return data.keys().hasAll(['userId', 'type', 'title', 'message', 'date', 'read']) &&
+             data.type in ['order', 'review', 'system'] &&
+             data.title is string && data.title.size() < 200 &&
+             data.message is string && data.message.size() < 1000 &&
+             data.read is bool;
+    }
+
+    function isValidChat(data) {
+      return data.keys().hasAll(['participants']) &&
+             data.participants is list && data.participants.size() == 2 &&
+             request.auth.uid in data.participants;
+    }
+
+    function isValidMessage(data) {
+      return data.keys().hasAll(['chatId', 'senderId', 'text', 'timestamp', 'read']) &&
+             data.senderId == request.auth.uid &&
+             data.text is string && data.text.size() > 0 && data.text.size() < 2000 &&
+             data.read is bool;
+    }
+
+    function isValidOffer(data) {
+      return data.keys().hasAll(['storeId', 'name', 'type', 'discountType', 'value', 'startDate', 'endDate', 'isFollowersOnly', 'isActive']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.type in ['discount', 'coupon'] &&
+             data.discountType in ['percentage', 'fixed'] &&
+             data.value is number && data.value > 0 &&
+             data.isActive is bool;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if (isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.type != 'admin') || isAdmin();
+      allow update: if (isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.type == resource.data.type) || isAdmin();
+    }
+
+    match /stores/{storeId} {
+      allow read: if true;
+      allow create: if (isAuthenticated() && isValidStore(request.resource.data)) || isAdmin();
+      allow update: if (isAuthenticated() && resource.data.ownerId == request.auth.uid && request.resource.data.ownerId == resource.data.ownerId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /products/{productId} {
+      allow read: if true;
+      allow create: if (isAuthenticated() && isStoreOwner(request.resource.data.storeId) && isValidProduct(request.resource.data)) || isAdmin();
+      allow update: if (isAuthenticated() && isStoreOwner(resource.data.storeId) && request.resource.data.storeId == resource.data.storeId) || isAdmin();
+      allow delete: if (isAuthenticated() && isStoreOwner(resource.data.storeId)) || isAdmin();
+    }
+
+    match /orders/{orderId} {
+      allow read: if isAuthenticated() && (resource.data.buyerId == request.auth.uid || isStoreOwner(resource.data.storeId) || isAdmin());
+      allow create: if (isAuthenticated() && isValidOrder(request.resource.data)) || isAdmin();
+      allow update: if (isAuthenticated() && (
+        (resource.data.buyerId == request.auth.uid && request.resource.data.status == 'cancelled') || 
+        isStoreOwner(resource.data.storeId)
+      ) && request.resource.data.buyerId == resource.data.buyerId && request.resource.data.storeId == resource.data.storeId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /subscriptions/{subscriptionId} {
+      allow read: if isAuthenticated();
+      allow create: if (isAuthenticated() && isValidSubscription(request.resource.data)) || isAdmin();
+      allow update: if (isAuthenticated() && resource.data.sellerId == request.auth.uid && request.resource.data.sellerId == resource.data.sellerId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated();
+      allow create: if (isAuthenticated() && isValidNotification(request.resource.data)) || isAdmin();
+      allow update: if (isAuthenticated() && resource.data.userId == request.auth.uid && request.resource.data.userId == resource.data.userId) || isAdmin();
+      allow delete: if (isAuthenticated() && resource.data.userId == request.auth.uid) || isAdmin();
+    }
+
+    match /chats/{chatId} {
+      allow read: if isAuthenticated();
+      allow create: if (isAuthenticated() && isValidChat(request.resource.data)) || isAdmin();
+      allow update: if isAuthenticated() && (request.auth.uid in resource.data.participants || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    match /messages/{messageId} {
+      allow read: if isAuthenticated();
+      allow create: if (isAuthenticated() && isChatParticipant(request.resource.data.chatId) && isValidMessage(request.resource.data)) || isAdmin();
+      allow update: if (isAuthenticated() && isChatParticipant(resource.data.chatId) && request.resource.data.senderId == resource.data.senderId && request.resource.data.chatId == resource.data.chatId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /offers/{offerId} {
+      allow read: if true;
+      allow create: if (isAuthenticated() && isStoreOwner(request.resource.data.storeId) && isValidOffer(request.resource.data)) || isAdmin();
+      allow update: if (isAuthenticated() && isStoreOwner(resource.data.storeId) && request.resource.data.storeId == resource.data.storeId) || isAdmin();
+      allow delete: if (isAuthenticated() && isStoreOwner(resource.data.storeId)) || isAdmin();
+    }
+  }
+}

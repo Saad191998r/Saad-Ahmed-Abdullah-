@@ -1,0 +1,208 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user in the system, either a buyer or a seller.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": "string" },
+        "type": { "type": "string", "enum": ["buyer", "seller"] },
+        "avatarUrl": { "type": "string" },
+        "description": { "type": "string" },
+        "wishlist": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["name", "email", "type"]
+    },
+    "Store": {
+      "title": "Store",
+      "description": "A store owned by a seller.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "logoUrl": { "type": "string" },
+        "coverUrl": { "type": "string" },
+        "images": { "type": "array", "items": { "type": "string" } },
+        "phone": { "type": "string" },
+        "location": { "type": "string" },
+        "city": { "type": "string" },
+        "followers": { "type": "array", "items": { "type": "string" } },
+        "shippingPolicy": { "type": "string" },
+        "featuredProductIds": { "type": "array", "items": { "type": "string" } },
+        "views": { "type": "number" }
+      },
+      "required": ["ownerId", "name", "description", "logoUrl", "coverUrl"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "A product listed in a store.",
+      "type": "object",
+      "properties": {
+        "storeId": { "type": "string" },
+        "name": { "type": "string" },
+        "price": { "type": "number" },
+        "description": { "type": "string" },
+        "images": { "type": "array", "items": { "type": "string" } },
+        "reviews": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "userId": { "type": "string" },
+              "rating": { "type": "number" },
+              "comment": { "type": "string" },
+              "date": { "type": "string" }
+            }
+          }
+        }
+      },
+      "required": ["storeId", "name", "price", "description", "images"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "An order placed by a buyer.",
+      "type": "object",
+      "properties": {
+        "buyerId": { "type": "string" },
+        "storeId": { "type": "string" },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "product": { "$ref": "Product" },
+              "quantity": { "type": "number" }
+            }
+          }
+        },
+        "total": { "type": "number" },
+        "status": { "type": "string", "enum": ["new", "processing", "shipped", "delivered", "cancelled"] },
+        "date": { "type": "string" },
+        "buyerPhone": { "type": "string" },
+        "buyerAddress": { "type": "string" }
+      },
+      "required": ["buyerId", "storeId", "items", "total", "status", "date"]
+    },
+    "Subscription": {
+      "title": "Subscription",
+      "description": "A seller's subscription status.",
+      "type": "object",
+      "properties": {
+        "sellerId": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "renewalDate": { "type": "string" }
+      },
+      "required": ["sellerId", "status", "renewalDate"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "A notification for a user.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "type": { "type": "string", "enum": ["order", "review"] },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "date": { "type": "string" },
+        "read": { "type": "boolean" },
+        "relatedId": { "type": "string" }
+      },
+      "required": ["userId", "type", "title", "message", "date", "read"]
+    },
+    "Chat": {
+      "title": "Chat",
+      "description": "A chat session between users.",
+      "type": "object",
+      "properties": {
+        "participants": { "type": "array", "items": { "type": "string" } },
+        "lastMessage": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "chatId": { "type": "string" },
+            "senderId": { "type": "string" },
+            "text": { "type": "string" },
+            "timestamp": { "type": "string" },
+            "read": { "type": "boolean" }
+          }
+        },
+        "storeId": { "type": "string" }
+      },
+      "required": ["participants"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "A message within a chat.",
+      "type": "object",
+      "properties": {
+        "chatId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "read": { "type": "boolean" }
+      },
+      "required": ["chatId", "senderId", "text", "timestamp", "read"]
+    },
+    "Offer": {
+      "title": "Offer",
+      "description": "A promotional offer created by a seller.",
+      "type": "object",
+      "properties": {
+        "storeId": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["discount", "coupon"] },
+        "discountType": { "type": "string", "enum": ["percentage", "fixed"] },
+        "value": { "type": "number" },
+        "code": { "type": "string" },
+        "startDate": { "type": "string" },
+        "endDate": { "type": "string" },
+        "isFollowersOnly": { "type": "boolean" },
+        "productIds": { "type": "array", "items": { "type": "string" } },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["storeId", "name", "type", "discountType", "value", "startDate", "endDate", "isFollowersOnly", "isActive"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "Users collection"
+    },
+    "stores/{storeId}": {
+      "schema": "Store",
+      "description": "Stores collection"
+    },
+    "products/{productId}": {
+      "schema": "Product",
+      "description": "Products collection"
+    },
+    "orders/{orderId}": {
+      "schema": "Order",
+      "description": "Orders collection"
+    },
+    "subscriptions/{subscriptionId}": {
+      "schema": "Subscription",
+      "description": "Subscriptions collection"
+    },
+    "notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "Notifications collection"
+    },
+    "chats/{chatId}": {
+      "schema": "Chat",
+      "description": "Chats collection"
+    },
+    "messages/{messageId}": {
+      "schema": "Message",
+      "description": "Messages collection"
+    },
+    "offers/{offerId}": {
+      "schema": "Offer",
+      "description": "Offers collection"
+    }
+  }
+}
