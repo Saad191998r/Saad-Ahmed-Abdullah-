@@ -1,21 +1,49 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
-import { Store, ShoppingCart, Minus, Plus, AlertCircle, Star, MessageSquare, MessageCircle, CheckCircle, Heart, Share2 } from 'lucide-react';
+import { Store, ShoppingCart, Minus, Plus, AlertCircle, Star, MessageSquare, MessageCircle, CheckCircle, Heart, Share2, UserPlus, UserCheck, ChevronLeft, ChevronRight, Tag } from 'lucide-react';
 import { ShareModal } from '../components/ShareModal';
 
 export const ProductView: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { products, stores, subscriptions, addToCart, currentUser, orders, addReview, users, createChat, toggleWishlist } = useAppContext();
+  const { products, stores, subscriptions, addToCart, currentUser, orders, addReview, users, createChat, toggleWishlist, toggleFollowStore, offers } = useAppContext();
   const [quantity, setQuantity] = useState(1);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [rating, setRating] = useState(5);
+
+  React.useEffect(() => {
+    setCurrentImageIndex(0);
+  }, [id]);
   const [comment, setComment] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
 
   const product = products.find(p => p.id === id);
   const store = product ? stores.find(s => s.id === product.storeId) : null;
+
+  const activeOffer = useMemo(() => {
+    if (!product) return null;
+    return offers.find(offer => {
+      if (!offer.isActive) return false;
+      if (offer.storeId !== product.storeId) return false;
+      const now = new Date();
+      const start = new Date(offer.startDate);
+      const end = new Date(offer.endDate);
+      if (now < start || now > end) return false;
+      if (offer.productIds && offer.productIds.length > 0) {
+        return offer.productIds.includes(product.id);
+      }
+      return true;
+    });
+  }, [product, offers]);
+
+  const discountedPrice = useMemo(() => {
+    if (!product || !activeOffer) return null;
+    return activeOffer.discountType === 'percentage' 
+      ? product.price * (1 - activeOffer.value / 100)
+      : Math.max(0, product.price - activeOffer.value);
+  }, [product, activeOffer]);
   const subscription = subscriptions.find(s => s.sellerId === store?.ownerId);
 
   if (!product || !store) {
@@ -63,7 +91,7 @@ export const ProductView: React.FC = () => {
     setTimeout(() => setShowSuccess(false), 2000);
   };
 
-  const handleChat = () => {
+  const handleChat = async () => {
     if (!currentUser) {
       alert('الرجاء تسجيل الدخول أولاً');
       navigate('/auth');
@@ -73,7 +101,7 @@ export const ProductView: React.FC = () => {
       alert('لا يمكنك مراسلة نفسك');
       return;
     }
-    const chatId = createChat(store.ownerId, store.id);
+    const chatId = await createChat(store.ownerId, store.id, store.ownerName, store.ownerAvatar);
     navigate(`/chat/${chatId}`);
   };
 
@@ -99,18 +127,127 @@ export const ProductView: React.FC = () => {
     ? (product.reviews.reduce((sum, r) => sum + r.rating, 0) / product.reviews.length).toFixed(1)
     : '0.0';
 
+  const productImages = Array.from(new Set([
+    product.imageUrl,
+    product.productImage,
+    product.image,
+    product.picture,
+    ...(product.images || [])
+  ].filter((img): img is string => !!img)));
+
+  if (productImages.length === 0) {
+    productImages.push('https://picsum.photos/seed/product/800/800');
+  }
+
   return (
     <div className="space-y-8">
       <div className="bg-white rounded-2xl shadow-sm overflow-hidden flex flex-col md:flex-row">
-        <div className="md:w-1/2 bg-gray-100 aspect-square md:aspect-auto">
-          <img src={product.images[0]} alt={product.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+        <div className="md:w-1/2 flex flex-col bg-gray-50">
+          <div className="relative group aspect-square w-full bg-white flex items-center justify-center overflow-hidden">
+            <img 
+              src={productImages[currentImageIndex]} 
+              alt={`${product.name} ${currentImageIndex + 1}`} 
+              className="w-full h-full object-contain transition-all duration-500" 
+              referrerPolicy="no-referrer" 
+            />
+            
+            {productImages.length > 1 && (
+              <>
+                {/* Navigation Arrows */}
+                <button 
+                  onClick={() => setCurrentImageIndex((prev) => (prev === 0 ? productImages.length - 1 : prev - 1))}
+                  className="absolute left-4 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white p-2 rounded-full shadow-lg transition-all opacity-0 group-hover:opacity-100 text-gray-800 z-10"
+                >
+                  <ChevronLeft className="h-6 w-6" />
+                </button>
+                <button 
+                  onClick={() => setCurrentImageIndex((prev) => (prev === productImages.length - 1 ? 0 : prev + 1))}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white p-2 rounded-full shadow-lg transition-all opacity-0 group-hover:opacity-100 text-gray-800 z-10"
+                >
+                  <ChevronRight className="h-6 w-6" />
+                </button>
+
+                {/* Dots Overlay */}
+                <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-1.5 z-10">
+                  {productImages.map((_, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => setCurrentImageIndex(idx)}
+                      className={`h-1.5 rounded-full transition-all ${idx === currentImageIndex ? 'bg-indigo-600 w-6' : 'bg-gray-300 w-1.5 hover:bg-gray-400'}`}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Thumbnail Strip */}
+          {productImages.length > 1 && (
+            <div className="p-4 bg-white border-t border-gray-100">
+              <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                {productImages.map((img, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => setCurrentImageIndex(idx)}
+                    className={`relative h-16 w-16 rounded-lg overflow-hidden border-2 shrink-0 transition-all ${
+                      idx === currentImageIndex ? 'border-indigo-600 ring-2 ring-indigo-100' : 'border-transparent hover:border-gray-200'
+                    }`}
+                  >
+                    <img 
+                      src={img} 
+                      alt={`Thumbnail ${idx + 1}`} 
+                      className="w-full h-full object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
         <div className="p-6 md:w-1/2 flex flex-col">
-          <Link to={`/store/${store.id}`} className="text-sm text-indigo-600 flex items-center gap-2 mb-2 hover:underline">
-            <Store className="h-4 w-4" />
-            {store.name}
-          </Link>
+          <div className="flex items-center justify-between mb-2">
+            <Link to={`/store/${store.id}`} className="text-sm text-indigo-600 flex items-center gap-2 hover:underline">
+              <Store className="h-4 w-4" />
+              {store.name}
+            </Link>
+            {currentUser && currentUser.id !== store.ownerId && (
+              <button
+                onClick={() => toggleFollowStore(store.id)}
+                className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                  store.followers?.includes(currentUser.id)
+                    ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                }`}
+              >
+                {store.followers?.includes(currentUser.id) ? (
+                  <>
+                    <UserCheck className="h-3 w-3" />
+                    الغاء المتابعة
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="h-3 w-3" />
+                    متابعة
+                  </>
+                )}
+              </button>
+            )}
+          </div>
           <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">{product.name}</h1>
+          
+          {product.category && (
+            <div className="mb-4">
+              <span className="bg-gray-100 dark:bg-gray-700 px-3 py-1 rounded-full text-xs font-medium text-gray-600 dark:text-gray-300">
+                {product.category === 'electronics' ? 'إلكترونيات' :
+                 product.category === 'clothing' ? 'ملابس' :
+                 product.category === 'food' ? 'طعام' :
+                 product.category === 'home' ? 'منزل' :
+                 product.category === 'beauty' ? 'تجميل' :
+                 product.category === 'other' ? 'أخرى' : product.category}
+              </span>
+            </div>
+          )}
           
           <div className="flex items-center gap-2 mb-4">
             <div className="flex items-center text-yellow-500">
@@ -121,7 +258,20 @@ export const ProductView: React.FC = () => {
           </div>
 
           <div className="flex items-center justify-between mb-6">
-            <div className="text-3xl font-bold text-indigo-600">{product.price} د.ع</div>
+            <div className="flex flex-col">
+              {discountedPrice !== null ? (
+                <div className="flex items-center gap-3">
+                  <span className="text-3xl font-bold text-red-600">{Math.round(discountedPrice)} د.ع</span>
+                  <span className="text-lg text-gray-400 line-through">{product.price} د.ع</span>
+                  <div className="bg-red-100 text-red-600 px-2 py-1 rounded-lg text-xs font-bold flex items-center gap-1">
+                    <Tag className="h-3 w-3" />
+                    {activeOffer?.discountType === 'percentage' ? `${activeOffer.value}% خصم` : 'عرض خاص'}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-3xl font-bold text-indigo-600">{product.price} د.ع</div>
+              )}
+            </div>
             <div className="flex gap-2">
               <button 
                 onClick={handleShare}
@@ -250,13 +400,23 @@ export const ProductView: React.FC = () => {
             </div>
           ) : (
             product.reviews.map(review => {
-              const reviewer = users.find(u => u.id === review.userId);
               return (
                 <div key={review.id} className="border-b border-gray-100 pb-6 last:border-0 last:pb-0">
                   <div className="flex justify-between items-start mb-2">
-                    <div>
-                      <div className="font-bold text-gray-900">{reviewer?.name || 'مستخدم'}</div>
-                      <div className="text-xs text-gray-500">{new Date(review.date).toLocaleDateString('ar-SA')}</div>
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-full overflow-hidden bg-gray-100 shrink-0">
+                        {review.userAvatar ? (
+                          <img src={review.userAvatar} alt={review.userName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-gray-500 font-bold text-lg">
+                            {review.userName?.charAt(0) || 'م'}
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <div className="font-bold text-gray-900">{review.userName || 'مستخدم'}</div>
+                        <div className="text-xs text-gray-500">{new Date(review.date).toLocaleDateString('ar-SA')}</div>
+                      </div>
                     </div>
                     <div className="flex text-yellow-500">
                       {[...Array(5)].map((_, i) => (

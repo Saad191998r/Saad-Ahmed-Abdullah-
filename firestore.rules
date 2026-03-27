@@ -27,7 +27,10 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isAuthenticated() && request.auth.token.email == "saad1998ahmedgg@gmail.com";
+      return isAuthenticated() && 
+             ((request.auth.token.email == "saad1998ahmedgg@gmail.com" && request.auth.token.email_verified == true) ||
+              (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.type == 'admin'));
     }
 
     // ===============================================================
@@ -41,14 +44,22 @@ service cloud.firestore {
     }
 
     function isValidStore(data) {
-      return data.keys().hasAll(['ownerId', 'name', 'description', 'logoUrl', 'coverUrl']) &&
+      let requiredFields = ['ownerId', 'name', 'description', 'logoUrl', 'coverUrl'];
+      let optionalFields = ['ownerName', 'ownerAvatar', 'coverImage', 'images', 'phone', 'location', 'city', 'followers', 'shippingPolicy', 'featuredProductIds', 'views'];
+      return data.keys().hasAll(requiredFields) &&
+             data.keys().hasOnly(requiredFields.concat(optionalFields)) &&
              data.ownerId == request.auth.uid &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
-             data.description is string && data.description.size() < 2000;
+             data.description is string && data.description.size() < 2000 &&
+             (!('ownerName' in data) || (data.ownerName is string && data.ownerName.size() < 100)) &&
+             (!('ownerAvatar' in data) || (data.ownerAvatar is string && data.ownerAvatar.size() < 2000));
     }
 
     function isValidProduct(data) {
-      return data.keys().hasAll(['storeId', 'name', 'price', 'description', 'images']) &&
+      let requiredFields = ['storeId', 'name', 'price', 'description', 'images'];
+      let optionalFields = ['imageUrl', 'productImage', 'image', 'picture', 'category', 'reviews'];
+      return data.keys().hasAll(requiredFields) &&
+             data.keys().hasOnly(requiredFields.concat(optionalFields)) &&
              data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
              data.price is number && data.price >= 0 &&
              data.description is string && data.description.size() < 5000 &&
@@ -77,7 +88,10 @@ service cloud.firestore {
     }
 
     function isValidChat(data) {
-      return data.keys().hasAll(['participants']) &&
+      let requiredFields = ['participants'];
+      let optionalFields = ['participantNames', 'participantAvatars', 'lastMessage', 'storeId'];
+      return data.keys().hasAll(requiredFields) &&
+             data.keys().hasOnly(requiredFields.concat(optionalFields)) &&
              data.participants is list && data.participants.size() == 2 &&
              request.auth.uid in data.participants;
     }
@@ -103,7 +117,7 @@ service cloud.firestore {
     // ===============================================================
 
     match /users/{userId} {
-      allow read: if isAuthenticated();
+      allow read: if isOwner(userId) || isAdmin();
       allow create: if (isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.type != 'admin') || isAdmin();
       allow update: if (isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.type == resource.data.type) || isAdmin();
     }
@@ -111,14 +125,19 @@ service cloud.firestore {
     match /stores/{storeId} {
       allow read: if true;
       allow create: if (isAuthenticated() && isValidStore(request.resource.data)) || isAdmin();
-      allow update: if (isAuthenticated() && resource.data.ownerId == request.auth.uid && request.resource.data.ownerId == resource.data.ownerId) || isAdmin();
+      allow update: if isAdmin() || 
+                    (isAuthenticated() && resource.data.ownerId == request.auth.uid && request.resource.data.ownerId == resource.data.ownerId) ||
+                    (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['followers'])) ||
+                    (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views']));
       allow delete: if isAdmin();
     }
 
     match /products/{productId} {
       allow read: if true;
       allow create: if (isAuthenticated() && isStoreOwner(request.resource.data.storeId) && isValidProduct(request.resource.data)) || isAdmin();
-      allow update: if (isAuthenticated() && isStoreOwner(resource.data.storeId) && request.resource.data.storeId == resource.data.storeId) || isAdmin();
+      allow update: if isAdmin() || 
+                    (isAuthenticated() && isStoreOwner(resource.data.storeId) && request.resource.data.storeId == resource.data.storeId) ||
+                    (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reviews']));
       allow delete: if (isAuthenticated() && isStoreOwner(resource.data.storeId)) || isAdmin();
     }
 

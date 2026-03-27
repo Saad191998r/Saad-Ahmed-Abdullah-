@@ -21,10 +21,13 @@
       "type": "object",
       "properties": {
         "ownerId": { "type": "string" },
+        "ownerName": { "type": "string" },
+        "ownerAvatar": { "type": "string" },
         "name": { "type": "string" },
         "description": { "type": "string" },
         "logoUrl": { "type": "string" },
         "coverUrl": { "type": "string" },
+        "coverImage": { "type": "string" },
         "images": { "type": "array", "items": { "type": "string" } },
         "phone": { "type": "string" },
         "location": { "type": "string" },
@@ -46,6 +49,10 @@
         "price": { "type": "number" },
         "description": { "type": "string" },
         "images": { "type": "array", "items": { "type": "string" } },
+        "imageUrl": { "type": "string" },
+        "productImage": { "type": "string" },
+        "image": { "type": "string" },
+        "picture": { "type": "string" },
         "reviews": {
           "type": "array",
           "items": {
@@ -53,6 +60,8 @@
             "properties": {
               "id": { "type": "string" },
               "userId": { "type": "string" },
+              "userName": { "type": "string" },
+              "userAvatar": { "type": "string" },
               "rating": { "type": "number" },
               "comment": { "type": "string" },
               "date": { "type": "string" }
@@ -119,6 +128,8 @@
       "type": "object",
       "properties": {
         "participants": { "type": "array", "items": { "type": "string" } },
+        "participantNames": { "type": "object", "additionalProperties": { "type": "string" } },
+        "participantAvatars": { "type": "object", "additionalProperties": { "type": "string" } },
         "lastMessage": {
           "type": "object",
           "properties": {

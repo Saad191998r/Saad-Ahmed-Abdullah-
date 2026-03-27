@@ -1,8 +1,8 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
 import { User, Store, Product, CartItem, Order, Subscription, Review, Chat, Message, Notification as AppNotification, Offer } from '../types';
 import { auth, db } from '../firebase';
 import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from 'firebase/auth';
-import { collection, doc, setDoc, getDoc, onSnapshot, query, where, updateDoc, deleteDoc, addDoc, getDocs } from 'firebase/firestore';
+import { collection, doc, setDoc, getDoc, onSnapshot, query, where, or, updateDoc, deleteDoc, addDoc, getDocs } from 'firebase/firestore';
 
 enum OperationType {
   CREATE = 'create',
@@ -78,8 +78,9 @@ interface AppContextType extends AppState {
   updateProfile: (user: User) => Promise<void>;
   addReview: (productId: string, review: Omit<Review, 'id' | 'date'>) => Promise<void>;
   sendMessage: (chatId: string, text: string) => Promise<void>;
-  createChat: (participantId: string, storeId?: string) => Promise<string>;
+  createChat: (participantId: string, storeId?: string, participantName?: string, participantAvatar?: string) => Promise<string>;
   markNotificationAsRead: (notificationId: string) => Promise<void>;
+  markMessagesAsRead: (chatId: string) => Promise<void>;
   toggleWishlist: (productId: string) => Promise<void>;
   addOffer: (offer: Offer) => Promise<void>;
   updateOffer: (offer: Offer) => Promise<void>;
@@ -113,30 +114,30 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        try {
-          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-          if (userDoc.exists()) {
-            setCurrentUser(userDoc.data() as User);
+        // Set up a real-time listener for the current user document
+        const unsubUserDoc = onSnapshot(doc(db, 'users', firebaseUser.uid), (docSnap) => {
+          if (docSnap.exists()) {
+            setCurrentUser(docSnap.data() as User);
           } else {
             setCurrentUser(null);
           }
-        } catch (error) {
+          setIsAuthReady(true);
+        }, (error) => {
           handleFirestoreError(error, OperationType.GET, `users/${firebaseUser.uid}`);
-        }
+          setIsAuthReady(true);
+        });
+        
+        return () => unsubUserDoc();
       } else {
         setCurrentUser(null);
+        setIsAuthReady(true);
       }
-      setIsAuthReady(true);
     });
     return () => unsubscribe();
   }, []);
 
   useEffect(() => {
     if (!isAuthReady) return;
-
-    const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
-      setUsers(snapshot.docs.map(doc => doc.data() as User));
-    }, (error) => handleFirestoreError(error, OperationType.LIST, 'users'));
 
     const unsubStores = onSnapshot(collection(db, 'stores'), (snapshot) => {
       setStores(snapshot.docs.map(doc => doc.data() as Store));
@@ -146,9 +147,67 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setProducts(snapshot.docs.map(doc => doc.data() as Product));
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'products'));
 
-    const unsubOrders = onSnapshot(collection(db, 'orders'), (snapshot) => {
-      setOrders(snapshot.docs.map(doc => doc.data() as Order));
-    }, (error) => handleFirestoreError(error, OperationType.LIST, 'orders'));
+    const unsubOffers = onSnapshot(collection(db, 'offers'), (snapshot) => {
+      setOffers(snapshot.docs.map(doc => doc.data() as Offer));
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'offers'));
+
+    return () => {
+      unsubStores();
+      unsubProducts();
+      unsubOffers();
+    };
+  }, [isAuthReady]);
+
+  const userStoreIds = useMemo(() => {
+    if (!currentUser) return [];
+    return stores.filter(s => s.ownerId === currentUser.id).map(s => s.id);
+  }, [currentUser, stores]);
+
+  const userStoreIdsString = userStoreIds.join(',');
+
+  useEffect(() => {
+    if (!isAuthReady || !currentUser) {
+      setOrders([]);
+      setSubscriptions([]);
+      setChats([]);
+      setMessages([]);
+      setNotifications([]);
+      setUsers([]);
+      return;
+    }
+
+    let unsubUsers = () => {};
+    if (currentUser.type === 'admin') {
+      unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
+        setUsers(snapshot.docs.map(doc => doc.data() as User));
+      }, (error) => handleFirestoreError(error, OperationType.LIST, 'users'));
+    }
+
+    let unsubOrders = () => {};
+
+    if (currentUser.type === 'admin') {
+      unsubOrders = onSnapshot(collection(db, 'orders'), (snapshot) => {
+        setOrders(snapshot.docs.map(doc => doc.data() as Order));
+      }, (error) => handleFirestoreError(error, OperationType.LIST, 'orders'));
+    } else {
+      if (userStoreIds.length > 0) {
+        const q = query(
+          collection(db, 'orders'),
+          or(
+            where('buyerId', '==', currentUser.id),
+            where('storeId', 'in', userStoreIds)
+          )
+        );
+        unsubOrders = onSnapshot(q, (snapshot) => {
+          setOrders(snapshot.docs.map(doc => doc.data() as Order));
+        }, (error) => handleFirestoreError(error, OperationType.LIST, 'orders'));
+      } else {
+        const q = query(collection(db, 'orders'), where('buyerId', '==', currentUser.id));
+        unsubOrders = onSnapshot(q, (snapshot) => {
+          setOrders(snapshot.docs.map(doc => doc.data() as Order));
+        }, (error) => handleFirestoreError(error, OperationType.LIST, 'orders'));
+      }
+    }
 
     const unsubSubscriptions = onSnapshot(collection(db, 'subscriptions'), (snapshot) => {
       setSubscriptions(snapshot.docs.map(doc => doc.data() as Subscription));
@@ -166,22 +225,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setNotifications(snapshot.docs.map(doc => doc.data() as AppNotification));
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'notifications'));
 
-    const unsubOffers = onSnapshot(collection(db, 'offers'), (snapshot) => {
-      setOffers(snapshot.docs.map(doc => doc.data() as Offer));
-    }, (error) => handleFirestoreError(error, OperationType.LIST, 'offers'));
-
     return () => {
       unsubUsers();
-      unsubStores();
-      unsubProducts();
       unsubOrders();
       unsubSubscriptions();
       unsubChats();
       unsubMessages();
       unsubNotifications();
-      unsubOffers();
     };
-  }, [isAuthReady]);
+  }, [isAuthReady, currentUser, userStoreIdsString]);
 
   const login = async (type: 'buyer' | 'seller') => {
     const provider = new GoogleAuthProvider();
@@ -298,18 +350,31 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const addStore = async (store: Store) => {
+    if (!currentUser) return;
     try {
-      await setDoc(doc(db, 'stores', store.id), store);
+      const storeWithUserData = {
+        ...store,
+        ownerName: currentUser.name,
+        ownerAvatar: currentUser.avatarUrl || ''
+      };
+      await setDoc(doc(db, 'stores', store.id), storeWithUserData);
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, `stores/${store.id}`);
     }
   };
 
   const updateStore = async (store: Store) => {
+    console.log("updateStore called with store:", store);
+    if (!currentUser) return;
     try {
       const storeData = Object.fromEntries(
-        Object.entries(store).filter(([_, v]) => v !== undefined)
+        Object.entries({
+          ...store,
+          ownerName: currentUser.name,
+          ownerAvatar: currentUser.avatarUrl || ''
+        }).filter(([_, v]) => v !== undefined)
       );
+      console.log("storeData size:", JSON.stringify(storeData).length);
       await updateDoc(doc(db, 'stores', store.id), storeData);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `stores/${store.id}`);
@@ -335,6 +400,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
   
   const addProduct = async (product: Product) => {
+    console.log("addProduct called with product:", product);
     const store = stores.find(s => s.id === product.storeId);
     if (store) {
         const subscription = subscriptions.find(s => s.sellerId === store.ownerId);
@@ -344,7 +410,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     try {
+      console.log("Attempting setDoc for product:", product.id);
       await setDoc(doc(db, 'products', product.id), product);
+      console.log("setDoc successful");
       
       if (store && store.followers) {
         for (const followerId of store.followers) {
@@ -352,15 +420,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
       }
     } catch (error) {
+      console.error("setDoc failed:", error);
       handleFirestoreError(error, OperationType.CREATE, `products/${product.id}`);
     }
   };
 
   const updateProduct = async (product: Product) => {
+    console.log("updateProduct called with product:", product);
     try {
       const productData = Object.fromEntries(
         Object.entries(product).filter(([_, v]) => v !== undefined)
       );
+      console.log("productData size:", JSON.stringify(productData).length);
       await updateDoc(doc(db, 'products', product.id), productData);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `products/${product.id}`);
@@ -444,11 +515,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const addReview = async (productId: string, reviewData: Omit<Review, 'id' | 'date'>) => {
+    if (!currentUser) return;
     try {
       const newReview: Review = {
         ...reviewData,
         id: `rev_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         date: new Date().toISOString(),
+        userName: currentUser.name,
+        userAvatar: currentUser.avatarUrl || ''
       };
 
       const product = products.find(p => p.id === productId);
@@ -485,7 +559,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  const createChat = async (participantId: string, storeId?: string) => {
+  const createChat = async (participantId: string, storeId?: string, participantName?: string, participantAvatar?: string) => {
     if (!currentUser) return '';
     try {
       const existingChat = chats.find(c => 
@@ -497,9 +571,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (existingChat) return existingChat.id;
 
       const chatId = `chat_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      const names: { [key: string]: string } = {
+        [currentUser.id]: currentUser.name,
+        [participantId]: participantName || 'مستخدم'
+      };
+      
+      const avatars: { [key: string]: string } = {
+        [currentUser.id]: currentUser.avatarUrl || '',
+        [participantId]: participantAvatar || ''
+      };
+
       const newChat: Chat = {
         id: chatId,
         participants: [currentUser.id, participantId],
+        participantNames: names,
+        participantAvatars: avatars,
         storeId,
       };
       
@@ -516,6 +603,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       await updateDoc(doc(db, 'notifications', notificationId), { read: true });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `notifications/${notificationId}`);
+    }
+  };
+
+  const markMessagesAsRead = async (chatId: string) => {
+    if (!currentUser) return;
+    try {
+      const unreadMessages = messages.filter(m => m.chatId === chatId && m.senderId !== currentUser.id && !m.read);
+      for (const msg of unreadMessages) {
+        await updateDoc(doc(db, 'messages', msg.id), { read: true });
+      }
+      
+      // Also update the lastMessage in the chat if it's the one we just read
+      const chat = chats.find(c => c.id === chatId);
+      if (chat && chat.lastMessage && chat.lastMessage.senderId !== currentUser.id && !chat.lastMessage.read) {
+        await updateDoc(doc(db, 'chats', chatId), {
+          'lastMessage.read': true
+        });
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `messages`);
     }
   };
 
@@ -588,7 +695,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       currentUser, users, stores, products, cart, orders, subscriptions, chats, messages, notifications, offers, isAuthReady,
       login, logout, register, addToCart, removeFromCart, clearCart, placeOrder,
       addStore, updateStore, toggleFollowStore, addProduct, updateProduct, deleteProduct, updateOrderStatus,
-      paySubscription, cancelSubscription, updateProfile, addReview, sendMessage, createChat, markNotificationAsRead, toggleWishlist,
+      paySubscription, cancelSubscription, updateProfile, addReview, sendMessage, createChat, markNotificationAsRead, markMessagesAsRead, toggleWishlist,
       addOffer, updateOffer, deleteOffer, toggleOfferStatus, incrementStoreViews
     }}>
       {children}

@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
-import { Store, MapPin, Star, AlertCircle, Phone, Users, UserPlus, UserCheck, MessageCircle, CheckCircle, ChevronLeft, ChevronRight, Share2, ShoppingBag, Truck, Loader2 } from 'lucide-react';
+import { Store, MapPin, Star, AlertCircle, Phone, Users, UserPlus, UserCheck, MessageCircle, CheckCircle, ChevronLeft, ChevronRight, Share2, ShoppingBag, Truck, Loader2, Heart } from 'lucide-react';
 import { ShareModal } from '../components/ShareModal';
+import { ProductCard } from '../components/ProductCard';
 
 export const StoreView: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { stores, products, subscriptions, users, currentUser, toggleFollowStore, createChat, orders, incrementStoreViews } = useAppContext();
+  const { stores, products, subscriptions, users, currentUser, toggleFollowStore, createChat, orders, incrementStoreViews, toggleWishlist } = useAppContext();
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'products' | 'about' | 'reviews'>('products');
@@ -170,8 +171,8 @@ export const StoreView: React.FC = () => {
                 {currentUser && currentUser.id !== store.ownerId && (
                   <>
                     <button
-                      onClick={() => {
-                        const chatId = createChat(store.ownerId, store.id);
+                      onClick={async () => {
+                        const chatId = await createChat(store.ownerId, store.id, store.ownerName, store.ownerAvatar);
                         navigate(`/chat/${chatId}`);
                       }}
                       className="flex items-center gap-2 px-4 py-2 rounded-full font-medium transition-colors bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
@@ -257,22 +258,22 @@ export const StoreView: React.FC = () => {
                 <p className="text-gray-600 leading-relaxed">{store.description}</p>
               </div>
               
-              {seller && (
+              {store.ownerName && (
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                   <h3 className="font-bold text-gray-900 mb-4 text-lg">عن التاجر</h3>
                   <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl border border-gray-100">
                     <div className="h-16 w-16 rounded-full overflow-hidden bg-gray-200 shrink-0">
-                      {seller.avatarUrl ? (
-                        <img src={seller.avatarUrl} alt={seller.name} className="w-full h-full object-cover" />
+                      {store.ownerAvatar ? (
+                        <img src={store.ownerAvatar} alt={store.ownerName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-gray-500 font-bold text-2xl">
-                          {seller.name.charAt(0)}
+                          {store.ownerName.charAt(0)}
                         </div>
                       )}
                     </div>
                     <div>
-                      <div className="font-bold text-gray-900 text-lg">{seller.name}</div>
-                      {seller.description && <div className="text-sm text-gray-600 mt-1">{seller.description}</div>}
+                      <div className="font-bold text-gray-900 text-lg">{store.ownerName}</div>
+                      {seller?.description && <div className="text-sm text-gray-600 mt-1">{seller.description}</div>}
                     </div>
                   </div>
                 </div>
@@ -350,25 +351,13 @@ export const StoreView: React.FC = () => {
                   </h2>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     {featuredProducts.map(product => (
-                      <Link key={product.id} to={`/product/${product.id}`} className="bg-white rounded-xl shadow-sm border-2 border-yellow-100 overflow-hidden flex flex-col group hover:shadow-md transition-shadow relative">
-                        <div className="absolute top-2 right-2 bg-yellow-400 text-white text-xs font-bold px-2 py-1 rounded-full z-10 shadow-sm">
-                          مميز
-                        </div>
-                        <div className="aspect-square bg-gray-100 overflow-hidden">
-                          <img 
-                            src={product.images?.[0] || 'https://picsum.photos/200'} 
-                            alt={product.name} 
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" 
-                            referrerPolicy="no-referrer" 
-                          />
-                        </div>
-                        <div className="p-3 flex-1 flex flex-col">
-                          <h3 className="font-medium text-gray-900 text-sm line-clamp-2 mb-2 group-hover:text-indigo-600 transition-colors">{product.name}</h3>
-                          <div className="mt-auto flex justify-between items-center">
-                            <span className="font-bold text-indigo-600">{product.price} د.ع</span>
-                          </div>
-                        </div>
-                      </Link>
+                      <ProductCard 
+                        key={product.id} 
+                        product={product} 
+                        store={store} 
+                        currentUser={currentUser} 
+                        toggleWishlist={toggleWishlist} 
+                      />
                     ))}
                   </div>
                 </div>
@@ -378,22 +367,13 @@ export const StoreView: React.FC = () => {
                 <h2 className="text-xl font-bold text-gray-900 mb-4">جميع المنتجات ({storeProducts.length})</h2>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   {regularProducts.map(product => (
-                    <Link key={product.id} to={`/product/${product.id}`} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col group hover:shadow-md transition-shadow">
-                      <div className="aspect-square bg-gray-100 overflow-hidden">
-                        <img 
-                          src={product.images?.[0] || 'https://picsum.photos/200'} 
-                          alt={product.name} 
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" 
-                          referrerPolicy="no-referrer" 
-                        />
-                      </div>
-                      <div className="p-3 flex-1 flex flex-col">
-                        <h3 className="font-medium text-gray-900 text-sm line-clamp-2 mb-2 group-hover:text-indigo-600 transition-colors">{product.name}</h3>
-                        <div className="mt-auto flex justify-between items-center">
-                          <span className="font-bold text-indigo-600">{product.price} د.ع</span>
-                        </div>
-                      </div>
-                    </Link>
+                    <ProductCard 
+                      key={product.id} 
+                      product={product} 
+                      store={store} 
+                      currentUser={currentUser} 
+                      toggleWishlist={toggleWishlist} 
+                    />
                   ))}
                 </div>
               </div>

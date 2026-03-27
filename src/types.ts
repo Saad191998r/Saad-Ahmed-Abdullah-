@@ -14,10 +14,13 @@ export interface User {
 export interface Store {
   id: string;
   ownerId: string;
+  ownerName?: string;
+  ownerAvatar?: string;
   name: string;
   description: string;
   logoUrl: string;
   coverUrl: string;
+  coverImage?: string;
   images?: string[];
   phone?: string;
   location?: string;
@@ -31,6 +34,8 @@ export interface Store {
 export interface Review {
   id: string;
   userId: string;
+  userName?: string;
+  userAvatar?: string;
   rating: number;
   comment: string;
   date: string;
@@ -43,6 +48,11 @@ export interface Product {
   price: number;
   description: string;
   images: string[];
+  imageUrl?: string;
+  productImage?: string;
+  image?: string;
+  picture?: string;
+  category?: string;
   reviews?: Review[];
 }
 
@@ -94,6 +104,8 @@ export interface Message {
 export interface Chat {
   id: string;
   participants: string[]; // User IDs
+  participantNames?: { [userId: string]: string };
+  participantAvatars?: { [userId: string]: string };
   lastMessage?: Message;
   storeId?: string; // Optional: link chat to a specific store context
 }

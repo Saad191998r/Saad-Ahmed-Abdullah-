@@ -1,14 +1,18 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
-import { Package, Plus, Edit, Trash2, TrendingUp, ShoppingBag, CreditCard, CheckCircle, Store as StoreIcon, Settings, Upload, AlertCircle, ArrowLeft, Star, Tag, Calendar, Eye, MessageCircle, AlertTriangle } from 'lucide-react';
+import { Package, Plus, Edit, Trash2, TrendingUp, ShoppingBag, CreditCard, CheckCircle, Store as StoreIcon, Settings, Upload, AlertCircle, ArrowLeft, Star, Tag, Calendar, Eye, MessageCircle, AlertTriangle, Square, CheckSquare, ChevronDown } from 'lucide-react';
 import { Product, Offer } from '../types';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from 'recharts';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { storage } from '../firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ImageCropperModal } from '../components/ImageCropperModal';
 
 export const SellerDashboard: React.FC = () => {
   const { currentUser, stores, products, orders, subscriptions, updateOrderStatus, addStore, addProduct, updateProduct, deleteProduct, updateStore, offers, addOffer, deleteOffer, toggleOfferStatus, paySubscription, cancelSubscription } = useAppContext();
   const location = useLocation();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'overview' | 'products' | 'orders' | 'subscription' | 'settings' | 'performance' | 'offers'>(
     (location.state as any)?.tab || 'overview'
   );
@@ -26,14 +30,25 @@ export const SellerDashboard: React.FC = () => {
   const [newStorePhone, setNewStorePhone] = useState('');
   const [newStoreLocation, setNewStoreLocation] = useState('');
   const [newStoreShippingPolicy, setNewStoreShippingPolicy] = useState('');
-  const [newStoreLogoUrl, setNewStoreLogoUrl] = useState('');
-  const [newStoreCoverUrl, setNewStoreCoverUrl] = useState('');
+  const [newStoreLogo, setNewStoreLogo] = useState<File | string | null>(null);
+  const [newStoreCover, setNewStoreCover] = useState<File | string | null>(null);
   const [isAddingProduct, setIsAddingProduct] = useState(false);
-  const [newProduct, setNewProduct] = useState({ name: '', price: '', desc: '', image: '' });
+  const [isSavingProduct, setIsSavingProduct] = useState(false);
+  const [isSavingStore, setIsSavingStore] = useState(false);
+  const [newProduct, setNewProduct] = useState({ name: '', price: '', desc: '', category: '', images: [] as (string | File)[] });
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [productToDelete, setProductToDelete] = useState<string | null>(null);
+  const [offerToDelete, setOfferToDelete] = useState<string | null>(null);
+  
+  // Image Cropper State
+  const [cropQueue, setCropQueue] = useState<File[]>([]);
+  const [currentCropImage, setCurrentCropImage] = useState<File | null>(null);
+  const [isCropperOpen, setIsCropperOpen] = useState(false);
+
   const [isAddingOffer, setIsAddingOffer] = useState(false);
   const [isCancellingSubscription, setIsCancellingSubscription] = useState(false);
+  const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
+  const [isBulkUpdating, setIsBulkUpdating] = useState(false);
   const [newOffer, setNewOffer] = useState<Partial<Offer>>({
     name: '',
     type: 'discount',
@@ -45,7 +60,22 @@ export const SellerDashboard: React.FC = () => {
     isActive: true
   });
 
+  useEffect(() => {
+    setSelectedOrderIds([]);
+  }, [activeTab]);
+
   const store = useMemo(() => stores.find(s => s.ownerId === currentUser?.id), [stores, currentUser]);
+
+  useEffect(() => {
+    if (store && activeTab === 'settings') {
+      setNewStoreName(store.name);
+      setNewStoreDesc(store.description);
+      setNewStorePhone(store.phone || '');
+      setNewStoreLocation(store.location || '');
+      setNewStoreShippingPolicy(store.shippingPolicy || '');
+    }
+  }, [store, activeTab]);
+
   const subscription = useMemo(() => subscriptions.find(s => s.sellerId === currentUser?.id), [subscriptions, currentUser]);
   const storeProducts = useMemo(() => products.filter(p => p.storeId === store?.id), [products, store]);
   const storeOrders = useMemo(() => orders.filter(o => o.storeId === store?.id), [orders, store]);
@@ -90,19 +120,65 @@ export const SellerDashboard: React.FC = () => {
         <h2 className="text-2xl font-bold text-gray-900 mb-2">إنشاء متجرك الأول</h2>
         <p className="text-gray-500 mb-8">أدخل تفاصيل متجرك للبدء في البيع</p>
         
-        <form onSubmit={(e) => {
+        <form onSubmit={async (e) => {
           e.preventDefault();
-          addStore({
-            id: `s_${Date.now()}`,
-            ownerId: currentUser.id,
-            name: newStoreName,
-            description: newStoreDesc,
-            logoUrl: `https://picsum.photos/seed/${Date.now()}/200/200`,
-            coverUrl: `https://picsum.photos/seed/${Date.now() + 1}/800/400`,
-            phone: newStorePhone,
-            location: newStoreLocation,
-          });
+          if (isSavingStore) return;
+          setIsSavingStore(true);
+          const storeId = `s_${Date.now()}`;
+          let finalLogoUrl = `https://picsum.photos/seed/${Date.now()}/200/200`;
+          let finalCoverUrl = `https://picsum.photos/seed/${Date.now() + 1}/800/400`;
+
+          if (newStoreLogo && typeof newStoreLogo !== 'string') {
+            const storageRef = ref(storage, `stores/${storeId}/logo_${Date.now()}`);
+            const snapshot = await uploadBytes(storageRef, newStoreLogo);
+            finalLogoUrl = await getDownloadURL(snapshot.ref);
+          }
+
+          if (newStoreCover && typeof newStoreCover !== 'string') {
+            const storageRef = ref(storage, `stores/${storeId}/cover_${Date.now()}`);
+            const snapshot = await uploadBytes(storageRef, newStoreCover);
+            finalCoverUrl = await getDownloadURL(snapshot.ref);
+          }
+
+          try {
+            await addStore({
+              id: storeId,
+              ownerId: currentUser!.id,
+              name: newStoreName,
+              description: newStoreDesc,
+              logoUrl: finalLogoUrl,
+              coverUrl: finalCoverUrl,
+              coverImage: finalCoverUrl,
+              phone: newStorePhone,
+              location: newStoreLocation,
+            });
+          } catch (error) {
+            console.error("Error creating store:", error);
+            alert("حدث خطأ أثناء إنشاء المتجر: " + (error instanceof Error ? error.message : String(error)));
+          } finally {
+            setIsSavingStore(false);
+          }
         }} className="space-y-4 text-right">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">شعار المتجر</label>
+            <input 
+              type="file" 
+              accept="image/*"
+              onChange={(e) => setNewStoreLogo(e.target.files?.[0] || null)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">صورة الغلاف</label>
+            <input 
+              type="file" 
+              accept="image/*"
+              onChange={(e) => setNewStoreCover(e.target.files?.[0] || null)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+              required
+            />
+          </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">اسم المتجر</label>
             <input 
@@ -145,9 +221,20 @@ export const SellerDashboard: React.FC = () => {
           </div>
           <button 
             type="submit"
-            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-colors mt-4"
+            disabled={isSavingStore}
+            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold transition-all shadow-lg shadow-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-            إنشاء المتجر
+            {isSavingStore ? (
+              <>
+                <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                جاري الإنشاء...
+              </>
+            ) : (
+              <>
+                <StoreIcon className="h-5 w-5" />
+                إنشاء المتجر
+              </>
+            )}
           </button>
         </form>
       </div>
@@ -155,42 +242,128 @@ export const SellerDashboard: React.FC = () => {
   }
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setNewProduct({ ...newProduct, image: reader.result as string });
-      };
-      reader.readAsDataURL(file);
+    const files = e.target.files;
+    if (!files) return;
+
+    let newImages: File[] = Array.from(files);
+    
+    // Filter by size (10MB)
+    const validImages = newImages.filter(file => file.size <= 10 * 1024 * 1024);
+    
+    if (validImages.length < newImages.length) {
+      alert("بعض الصور تتجاوز الحجم المسموح به (10 ميجابايت) وتم استبعادها.");
+    }
+
+    if (newProduct.images.length + validImages.length > 4) {
+      alert("يمكنك اختيار 4 صور كحد أقصى للمنتج");
+      return;
+    }
+
+    if (validImages.length > 0) {
+      setCropQueue(validImages.slice(1));
+      setCurrentCropImage(validImages[0]);
+      setIsCropperOpen(true);
+    }
+    
+    // Reset input
+    e.target.value = '';
+  };
+
+  const handleCropComplete = (croppedImage: File) => {
+    setNewProduct(prev => ({ ...prev, images: [...prev.images, croppedImage] }));
+    
+    if (cropQueue.length > 0) {
+      setCurrentCropImage(cropQueue[0]);
+      setCropQueue(prev => prev.slice(1));
+    } else {
+      setIsCropperOpen(false);
+      setCurrentCropImage(null);
     }
   };
 
-  const handleAddProduct = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!store) return;
-    
-    if (editingProduct) {
-      updateProduct({
-        ...editingProduct,
-        name: newProduct.name,
-        price: Number(newProduct.price),
-        description: newProduct.desc,
-        images: [newProduct.image || editingProduct.images[0]]
-      });
-      setEditingProduct(null);
+  const handleCropCancel = () => {
+    if (cropQueue.length > 0) {
+      setCurrentCropImage(cropQueue[0]);
+      setCropQueue(prev => prev.slice(1));
     } else {
-      addProduct({
-        id: `p_${Date.now()}`,
-        storeId: store.id,
-        name: newProduct.name,
-        price: Number(newProduct.price),
-        description: newProduct.desc,
-        images: [newProduct.image || `https://picsum.photos/seed/${Date.now()}/400/400`]
-      });
+      setIsCropperOpen(false);
+      setCurrentCropImage(null);
     }
-    
-    setIsAddingProduct(false);
-    setNewProduct({ name: '', price: '', desc: '', image: '' });
+  };
+
+  const removeImage = (index: number) => {
+    setNewProduct(prev => ({
+      ...prev,
+      images: prev.images.filter((_, i) => i !== index)
+    }));
+  };
+
+  const handleAddProduct = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!store) {
+      alert("يجب إنشاء متجر أولاً");
+      return;
+    }
+
+    setIsSavingProduct(true);
+    try {
+      const uploadedImageUrls: string[] = [];
+
+      // Handle image uploads
+      for (const img of newProduct.images) {
+        if (typeof img === 'string') {
+          uploadedImageUrls.push(img);
+        } else {
+          const storageRef = ref(storage, `products/${Date.now()}_${img.name}`);
+          const snapshot = await uploadBytes(storageRef, img);
+          const url = await getDownloadURL(snapshot.ref);
+          uploadedImageUrls.push(url);
+        }
+      }
+
+      const finalImageUrl = uploadedImageUrls.length > 0 
+        ? uploadedImageUrls[0] 
+        : `https://picsum.photos/seed/${Date.now()}/400/400`;
+
+      if (editingProduct) {
+        await updateProduct({
+          ...editingProduct,
+          name: newProduct.name,
+          price: Number(newProduct.price),
+          description: newProduct.desc,
+          category: newProduct.category,
+          images: uploadedImageUrls,
+          imageUrl: finalImageUrl,
+          productImage: finalImageUrl,
+          image: finalImageUrl,
+          picture: finalImageUrl
+        });
+        setEditingProduct(null);
+      } else {
+        await addProduct({
+          id: `p_${Date.now()}`,
+          storeId: store.id,
+          name: newProduct.name,
+          price: Number(newProduct.price),
+          description: newProduct.desc,
+          category: newProduct.category,
+          images: uploadedImageUrls.length > 0 ? uploadedImageUrls : [finalImageUrl],
+          imageUrl: finalImageUrl,
+          productImage: finalImageUrl,
+          image: finalImageUrl,
+          picture: finalImageUrl
+        });
+      }
+      
+      alert("تم حفظ المنتج");
+      setIsAddingProduct(false);
+      setNewProduct({ name: '', price: '', desc: '', category: '', images: [] });
+    } catch (error) {
+      console.error("Error saving product:", error);
+      alert("حدث خطأ أثناء حفظ المنتج: " + (error instanceof Error ? error.message : String(error)));
+    } finally {
+      setIsSavingProduct(false);
+    }
   };
 
   const handleEditClick = (product: Product) => {
@@ -199,13 +372,46 @@ export const SellerDashboard: React.FC = () => {
       name: product.name,
       price: product.price.toString(),
       desc: product.description,
-      image: product.images[0]
+      category: product.category || '',
+      images: product.images
     });
     setIsAddingProduct(true);
   };
 
   const handleDeleteClick = (productId: string) => {
     setProductToDelete(productId);
+  };
+
+  const handleBulkStatusUpdate = async (newStatus: 'new' | 'processing' | 'shipped' | 'delivered' | 'cancelled') => {
+    if (selectedOrderIds.length === 0) return;
+    
+    setIsBulkUpdating(true);
+    try {
+      await Promise.all(selectedOrderIds.map(id => updateOrderStatus(id, newStatus)));
+      setSelectedOrderIds([]);
+      alert(`تم تحديث حالة ${selectedOrderIds.length} طلبات بنجاح`);
+    } catch (error) {
+      console.error("Error bulk updating orders:", error);
+      alert("حدث خطأ أثناء تحديث الطلبات");
+    } finally {
+      setIsBulkUpdating(false);
+    }
+  };
+
+  const toggleOrderSelection = (orderId: string) => {
+    setSelectedOrderIds(prev => 
+      prev.includes(orderId) 
+        ? prev.filter(id => id !== orderId) 
+        : [...prev, orderId]
+    );
+  };
+
+  const toggleSelectAllOrders = () => {
+    if (selectedOrderIds.length === storeOrders.length) {
+      setSelectedOrderIds([]);
+    } else {
+      setSelectedOrderIds(storeOrders.map(o => o.id));
+    }
   };
 
   const confirmDelete = () => {
@@ -232,6 +438,51 @@ export const SellerDashboard: React.FC = () => {
       ...store,
       featuredProductIds: newFeatured
     });
+  };
+
+  const handleUpdateStore = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!store || isSavingStore) return;
+
+    setIsSavingStore(true);
+    try {
+      let finalLogoUrl = store.logoUrl;
+      let finalCoverUrl = store.coverUrl;
+
+      if (newStoreLogo && typeof newStoreLogo !== 'string') {
+        const storageRef = ref(storage, `stores/${store.id}/logo_${Date.now()}`);
+        const snapshot = await uploadBytes(storageRef, newStoreLogo);
+        finalLogoUrl = await getDownloadURL(snapshot.ref);
+      }
+
+      if (newStoreCover && typeof newStoreCover !== 'string') {
+        const storageRef = ref(storage, `stores/${store.id}/cover_${Date.now()}`);
+        const snapshot = await uploadBytes(storageRef, newStoreCover);
+        finalCoverUrl = await getDownloadURL(snapshot.ref);
+      }
+
+      await updateStore({
+        ...store,
+        name: newStoreName || store.name,
+        description: newStoreDesc || store.description,
+        phone: newStorePhone || store.phone,
+        location: newStoreLocation || store.location,
+        shippingPolicy: newStoreShippingPolicy || store.shippingPolicy,
+        logoUrl: finalLogoUrl,
+        coverUrl: finalCoverUrl,
+        coverImage: finalCoverUrl,
+      });
+      
+      alert('تم حفظ المعلومات بنجاح');
+      setNewStoreLogo(null);
+      setNewStoreCover(null);
+      navigate('/');
+    } catch (error) {
+      console.error("Error updating store:", error);
+      alert("حدث خطأ أثناء تحديث المتجر: " + (error instanceof Error ? error.message : String(error)));
+    } finally {
+      setIsSavingStore(false);
+    }
   };
 
   const handleSaveOffer = (e: React.FormEvent) => {
@@ -350,10 +601,19 @@ export const SellerDashboard: React.FC = () => {
       {activeTab === 'overview' && (
         <div className="space-y-8">
           {/* Welcome Section */}
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900">مرحباً، {store.name} 👋</h2>
-              <p className="text-gray-500 mt-1">إليك نظرة عامة على أداء متجرك اليوم.</p>
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-8 mb-8">
+            <div className="flex items-center gap-4">
+              <div className="h-20 w-20 rounded-2xl bg-indigo-50 flex items-center justify-center overflow-hidden border-2 border-white shadow-sm">
+                {store.logoUrl ? (
+                  <img src={store.logoUrl} alt={store.name} className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+                ) : (
+                  <StoreIcon className="h-10 w-10 text-indigo-600" />
+                )}
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">مرحباً، {store.name} 👋</h2>
+                <p className="text-gray-500 mt-1">إليك نظرة عامة على أداء متجرك اليوم.</p>
+              </div>
             </div>
             <div className="flex gap-3">
               <button 
@@ -607,26 +867,6 @@ export const SellerDashboard: React.FC = () => {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">صورة المنتج</label>
-                  <div className="flex items-center gap-4">
-                    {newProduct.image && (
-                      <div className="h-16 w-16 rounded-lg overflow-hidden border border-gray-200 shrink-0">
-                        <img src={newProduct.image} alt="Preview" className="w-full h-full object-cover" />
-                      </div>
-                    )}
-                    <label className="flex-1 flex items-center justify-center gap-2 px-4 py-2 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-indigo-500 hover:bg-indigo-50 transition-colors">
-                      <Upload className="h-5 w-5 text-gray-400" />
-                      <span className="text-sm font-medium text-gray-600">اختر صورة</span>
-                      <input 
-                        type="file" 
-                        accept="image/*"
-                        onChange={handleImageUpload}
-                        className="hidden"
-                      />
-                    </label>
-                  </div>
-                </div>
-                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">وصف المنتج</label>
                   <textarea 
                     value={newProduct.desc}
@@ -635,13 +875,58 @@ export const SellerDashboard: React.FC = () => {
                     required
                   />
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">القسم</label>
+                  <input 
+                    type="text" 
+                    value={newProduct.category}
+                    onChange={(e) => setNewProduct({ ...newProduct, category: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                    placeholder="مثال: إلكترونيات، ملابس..."
+                  />
+                </div>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">صور المنتج (الحد الأقصى 4 صور، 10 ميجابايت للصورة)</label>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                    {newProduct.images.map((img, index) => (
+                      <div key={index} className="relative aspect-square rounded-xl overflow-hidden border border-gray-200 group">
+                        <img 
+                          src={typeof img === 'string' ? img : URL.createObjectURL(img as File)} 
+                          alt={`Preview ${index}`} 
+                          className="w-full h-full object-cover"
+                          referrerPolicy="no-referrer"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeImage(index)}
+                          className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                    {newProduct.images.length < 4 && (
+                      <label className="aspect-square rounded-xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 transition-colors">
+                        <Upload className="h-8 w-8 text-gray-400 mb-2" />
+                        <span className="text-sm text-gray-500">إضافة صورة</span>
+                        <input 
+                          type="file" 
+                          accept="image/*" 
+                          multiple 
+                          className="hidden" 
+                          onChange={handleImageUpload}
+                        />
+                      </label>
+                    )}
+                  </div>
+                </div>
                 <div className="flex justify-end gap-2 pt-2">
                   <button 
                     type="button"
                     onClick={() => {
                       setIsAddingProduct(false);
                       setEditingProduct(null);
-                      setNewProduct({ name: '', price: '', desc: '', image: '' });
+                      setNewProduct({ name: '', price: '', desc: '', category: '', images: [] });
                     }}
                     className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-xl font-medium transition-colors"
                   >
@@ -649,9 +934,17 @@ export const SellerDashboard: React.FC = () => {
                   </button>
                   <button 
                     type="submit"
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-xl font-medium transition-colors"
+                    disabled={isSavingProduct}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-xl font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                   >
-                    {editingProduct ? 'تحديث المنتج' : 'حفظ المنتج'}
+                    {isSavingProduct ? (
+                      <>
+                        <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        جاري الحفظ...
+                      </>
+                    ) : (
+                      editingProduct ? 'تحديث المنتج' : 'حفظ المنتج'
+                    )}
                   </button>
                 </div>
               </form>
@@ -722,22 +1015,70 @@ export const SellerDashboard: React.FC = () => {
             </div>
           ) : (
             <div className="space-y-4">
+              <div className="flex items-center justify-between bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-2">
+                <div className="flex items-center gap-3">
+                  <button 
+                    onClick={toggleSelectAllOrders}
+                    className="text-indigo-600 hover:bg-indigo-50 p-1 rounded transition-colors"
+                  >
+                    {selectedOrderIds.length === storeOrders.length ? (
+                      <CheckSquare className="h-5 w-5" />
+                    ) : (
+                      <Square className="h-5 w-5" />
+                    )}
+                  </button>
+                  <span className="text-sm font-medium text-gray-700">تحديد الكل ({storeOrders.length})</span>
+                </div>
+                {selectedOrderIds.length > 0 && (
+                  <div className="flex items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <span className="text-sm text-gray-500">{selectedOrderIds.length} طلبات محددة</span>
+                    <div className="relative group">
+                      <select 
+                        disabled={isBulkUpdating}
+                        onChange={(e) => handleBulkStatusUpdate(e.target.value as any)}
+                        className="text-sm font-medium px-4 py-2 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-700 outline-none cursor-pointer hover:bg-indigo-100 transition-colors appearance-none pr-10"
+                        defaultValue=""
+                      >
+                        <option value="" disabled>تحديث الحالة للمحدد</option>
+                        <option value="new">جديد</option>
+                        <option value="processing">قيد التنفيذ</option>
+                        <option value="shipped">تم الشحن</option>
+                        <option value="delivered">تم التسليم</option>
+                      </select>
+                      <ChevronDown className="h-4 w-4 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-indigo-600" />
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {storeOrders.map(order => (
-                <div key={order.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                <div key={order.id} className={`bg-white p-4 rounded-xl shadow-sm border transition-all ${selectedOrderIds.includes(order.id) ? 'border-indigo-300 ring-1 ring-indigo-100' : 'border-gray-100'}`}>
                   <div className="flex justify-between items-start mb-4">
-                    <div>
-                      <div className="font-medium text-gray-900 mb-1">رقم الطلب: {order.id.split('_')[2]}</div>
-                      <div className="text-sm text-gray-500 mb-2">{new Date(order.date).toLocaleDateString('ar-SA')}</div>
-                      {order.buyerPhone && (
-                        <div className="text-sm text-gray-600">
-                          <span className="font-medium">رقم التواصل:</span> <span dir="ltr">{order.buyerPhone}</span>
-                        </div>
-                      )}
-                      {order.buyerAddress && (
-                        <div className="text-sm text-gray-600">
-                          <span className="font-medium">العنوان:</span> {order.buyerAddress}
-                        </div>
-                      )}
+                    <div className="flex gap-3">
+                      <button 
+                        onClick={() => toggleOrderSelection(order.id)}
+                        className="text-indigo-600 hover:bg-indigo-50 p-1 rounded transition-colors mt-1"
+                      >
+                        {selectedOrderIds.includes(order.id) ? (
+                          <CheckSquare className="h-5 w-5" />
+                        ) : (
+                          <Square className="h-5 w-5" />
+                        )}
+                      </button>
+                      <div>
+                        <div className="font-medium text-gray-900 mb-1">رقم الطلب: {order.id.split('_')[2]}</div>
+                        <div className="text-sm text-gray-500 mb-2">{new Date(order.date).toLocaleDateString('ar-SA')}</div>
+                        {order.buyerPhone && (
+                          <div className="text-sm text-gray-600">
+                            <span className="font-medium">رقم التواصل:</span> <span dir="ltr">{order.buyerPhone}</span>
+                          </div>
+                        )}
+                        {order.buyerAddress && (
+                          <div className="text-sm text-gray-600">
+                            <span className="font-medium">العنوان:</span> {order.buyerAddress}
+                          </div>
+                        )}
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <select 
@@ -1153,24 +1494,24 @@ export const SellerDashboard: React.FC = () => {
                         </div>
                       )}
                     </div>
-                    <div className="flex gap-2">
-                      <button 
-                        onClick={() => toggleOfferStatus(offer.id)}
-                        className={`p-2 rounded-lg transition-colors ${
-                          offer.isActive ? 'text-green-600 hover:bg-green-50' : 'text-gray-400 hover:bg-gray-100'
-                        }`}
-                        title={offer.isActive ? 'إيقاف العرض' : 'تفعيل العرض'}
-                      >
-                        <CheckCircle className="h-5 w-5" />
-                      </button>
-                      <button 
-                        onClick={() => deleteOffer(offer.id)}
-                        className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                        title="حذف العرض"
-                      >
-                        <Trash2 className="h-5 w-5" />
-                      </button>
-                    </div>
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => toggleOfferStatus(offer.id)}
+                            className={`p-2 rounded-lg transition-colors ${
+                              offer.isActive ? 'text-green-600 hover:bg-green-50' : 'text-gray-400 hover:bg-gray-100'
+                            }`}
+                            title={offer.isActive ? 'إيقاف العرض' : 'تفعيل العرض'}
+                          >
+                            <CheckCircle className="h-5 w-5" />
+                          </button>
+                          <button 
+                            onClick={() => setOfferToDelete(offer.id)}
+                            className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                            title="حذف العرض"
+                          >
+                            <Trash2 className="h-5 w-5" />
+                          </button>
+                        </div>
                   </div>
                   
                   <div className="space-y-2 text-sm text-gray-500">
@@ -1198,77 +1539,30 @@ export const SellerDashboard: React.FC = () => {
               <Settings className="h-6 w-6 text-indigo-600" />
               إعدادات المتجر
             </h2>
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              updateStore({
-                ...store,
-                name: newStoreName || store.name,
-                description: newStoreDesc || store.description,
-                phone: newStorePhone || store.phone,
-                location: newStoreLocation || store.location,
-                shippingPolicy: newStoreShippingPolicy || store.shippingPolicy,
-                logoUrl: newStoreLogoUrl || store.logoUrl,
-                coverUrl: newStoreCoverUrl || store.coverUrl,
-              });
-              alert('تم تحديث إعدادات المتجر بنجاح');
-            }} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">شعار المتجر</label>
-                  <div className="flex items-center gap-4">
-                    <div className="h-16 w-16 rounded-full overflow-hidden border border-gray-200 shrink-0">
-                      <img src={newStoreLogoUrl || store.logoUrl} alt="Logo" className="w-full h-full object-cover" />
-                    </div>
-                    <label className="flex-1 flex items-center justify-center gap-2 px-4 py-2 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-indigo-500 hover:bg-indigo-50 transition-colors">
-                      <Upload className="h-5 w-5 text-gray-400" />
-                      <span className="text-sm font-medium text-gray-600">تغيير الشعار</span>
-                      <input 
-                        type="file" 
-                        accept="image/*"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            const reader = new FileReader();
-                            reader.onloadend = () => setNewStoreLogoUrl(reader.result as string);
-                            reader.readAsDataURL(file);
-                          }
-                        }}
-                        className="hidden"
-                      />
-                    </label>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">غلاف المتجر</label>
-                  <div className="flex items-center gap-4">
-                    <div className="h-16 w-32 rounded-lg overflow-hidden border border-gray-200 shrink-0">
-                      <img src={newStoreCoverUrl || store.coverUrl} alt="Cover" className="w-full h-full object-cover" />
-                    </div>
-                    <label className="flex-1 flex items-center justify-center gap-2 px-4 py-2 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-indigo-500 hover:bg-indigo-50 transition-colors">
-                      <Upload className="h-5 w-5 text-gray-400" />
-                      <span className="text-sm font-medium text-gray-600">تغيير الغلاف</span>
-                      <input 
-                        type="file" 
-                        accept="image/*"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            const reader = new FileReader();
-                            reader.onloadend = () => setNewStoreCoverUrl(reader.result as string);
-                            reader.readAsDataURL(file);
-                          }
-                        }}
-                        className="hidden"
-                      />
-                    </label>
-                  </div>
-                </div>
+            <form onSubmit={handleUpdateStore} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">شعار المتجر</label>
+                <input 
+                  type="file" 
+                  accept="image/*"
+                  onChange={(e) => setNewStoreLogo(e.target.files?.[0] || null)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">صورة الغلاف</label>
+                <input 
+                  type="file" 
+                  accept="image/*"
+                  onChange={(e) => setNewStoreCover(e.target.files?.[0] || null)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">اسم المتجر</label>
                 <input 
                   type="text" 
-                  defaultValue={store.name}
+                  value={newStoreName}
                   onChange={(e) => setNewStoreName(e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                 />
@@ -1277,7 +1571,7 @@ export const SellerDashboard: React.FC = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-1">رقم هاتف المتجر</label>
                 <input 
                   type="tel" 
-                  defaultValue={store.phone}
+                  value={newStorePhone}
                   onChange={(e) => setNewStorePhone(e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                   dir="ltr"
@@ -1287,7 +1581,7 @@ export const SellerDashboard: React.FC = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-1">موقع المتجر</label>
                 <input 
                   type="text" 
-                  defaultValue={store.location}
+                  value={newStoreLocation}
                   onChange={(e) => setNewStoreLocation(e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                 />
@@ -1295,7 +1589,7 @@ export const SellerDashboard: React.FC = () => {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">وصف المتجر</label>
                 <textarea 
-                  defaultValue={store.description}
+                  value={newStoreDesc}
                   onChange={(e) => setNewStoreDesc(e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none h-24 resize-none"
                 />
@@ -1303,7 +1597,7 @@ export const SellerDashboard: React.FC = () => {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">سياسة الشحن والتوصيل</label>
                 <textarea 
-                  defaultValue={store.shippingPolicy}
+                  value={newStoreShippingPolicy}
                   onChange={(e) => setNewStoreShippingPolicy(e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none h-24 resize-none"
                   placeholder="أدخل تفاصيل الشحن والتوصيل الخاصة بمتجرك..."
@@ -1311,71 +1605,44 @@ export const SellerDashboard: React.FC = () => {
               </div>
               <button 
                 type="submit"
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-colors mt-4"
+                disabled={isSavingStore}
+                className={`w-full ${isSavingStore ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'} text-white font-bold py-3 rounded-xl transition-colors mt-4`}
               >
-                حفظ التغييرات
+                {isSavingStore ? 'جاري الحفظ...' : 'حفظ التغييرات'}
               </button>
             </form>
           </div>
         </div>
       )}
-      {productToDelete && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-2xl shadow-xl max-w-sm w-full mx-4">
-            <div className="flex flex-col items-center text-center mb-6">
-              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mb-4">
-                <Trash2 className="h-6 w-6 text-red-600" />
-              </div>
-              <h3 className="text-lg font-bold text-gray-900 mb-2">تأكيد الحذف</h3>
-              <p className="text-gray-600">هل أنت متأكد من رغبتك في حذف هذا المنتج؟ لا يمكن التراجع عن هذا الإجراء.</p>
-            </div>
-            <div className="flex justify-end gap-3">
-              <button 
-                onClick={() => setProductToDelete(null)}
-                className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl font-medium transition-colors"
-              >
-                إلغاء
-              </button>
-              <button 
-                onClick={confirmDelete}
-                className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl font-medium transition-colors"
-              >
-                حذف
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {isCancellingSubscription && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-2xl shadow-xl max-w-sm w-full mx-4">
-            <div className="flex flex-col items-center text-center mb-6">
-              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mb-4">
-                <AlertTriangle className="h-6 w-6 text-red-600" />
-              </div>
-              <h3 className="text-lg font-bold text-gray-900 mb-2">تأكيد إلغاء الاشتراك</h3>
-              <p className="text-gray-600">هل أنت متأكد من رغبتك في إلغاء الاشتراك؟ لن تتمكن من إضافة منتجات جديدة أو استقبال طلبات.</p>
-            </div>
-            <div className="flex justify-end gap-3">
-              <button 
-                onClick={() => setIsCancellingSubscription(false)}
-                className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl font-medium transition-colors"
-              >
-                إلغاء
-              </button>
-              <button 
-                onClick={() => {
-                  cancelSubscription(currentUser!.id);
-                  setIsCancellingSubscription(false);
-                }}
-                className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl font-medium transition-colors"
-              >
-                إلغاء الاشتراك
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmModal 
+        isOpen={!!productToDelete}
+        onClose={() => setProductToDelete(null)}
+        onConfirm={confirmDelete}
+        title="تأكيد الحذف"
+        message="هل أنت متأكد من رغبتك في حذف هذا المنتج؟ لا يمكن التراجع عن هذا الإجراء."
+      />
+      <ConfirmModal 
+        isOpen={isCancellingSubscription}
+        onClose={() => setIsCancellingSubscription(false)}
+        onConfirm={() => {
+          cancelSubscription(currentUser!.id);
+          setIsCancellingSubscription(false);
+        }}
+        title="تأكيد إلغاء الاشتراك"
+        message="هل أنت متأكد من رغبتك في إلغاء الاشتراك؟ لن تتمكن من إضافة منتجات جديدة أو استقبال طلبات."
+      />
+      <ConfirmModal 
+        isOpen={!!offerToDelete}
+        onClose={() => setOfferToDelete(null)}
+        onConfirm={() => {
+          if (offerToDelete) {
+            deleteOffer(offerToDelete);
+            setOfferToDelete(null);
+          }
+        }}
+        title="حذف العرض"
+        message="هل أنت متأكد أنك تريد حذف هذا العرض؟"
+      />
 
       <ConfirmModal 
         isOpen={confirmCancelOrder.isOpen}
@@ -1388,6 +1655,14 @@ export const SellerDashboard: React.FC = () => {
         title="إلغاء الطلب"
         message="هل أنت متأكد أنك تريد إلغاء هذا الطلب؟"
       />
+
+      {isCropperOpen && currentCropImage && (
+        <ImageCropperModal
+          imageFile={currentCropImage}
+          onCropComplete={handleCropComplete}
+          onCancel={handleCropCancel}
+        />
+      )}
     </div>
   );
 };

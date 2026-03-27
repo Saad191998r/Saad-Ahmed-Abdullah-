@@ -14,7 +14,7 @@ export const Cart: React.FC = () => {
 
   const firstItemStoreId = cart[0]?.product.storeId;
   const store = stores.find(s => s.id === firstItemStoreId);
-  const sellerPhone = store?.phone ? store.phone.replace(/[^0-9]/g, '') : '9647XXXXXXXXX';
+  const sellerPhone = store?.phone ? store.phone.replace(/[^0-9]/g, '') : '';
 
   // Block navigation if cart has items and not submitting order
   const blocker = useBlocker(
@@ -56,6 +56,10 @@ export const Cart: React.FC = () => {
     if (!currentUser) {
       alert('الرجاء تسجيل الدخول أولاً');
       navigate('/auth');
+      return;
+    }
+    if (!sellerPhone) {
+      alert('عذراً، هذا المتجر لم يقم بإعداد رقم هاتف للتواصل.');
       return;
     }
     setShowConfirmationModal(true);
@@ -103,10 +107,6 @@ export const Cart: React.FC = () => {
             <div className="flex justify-between text-gray-600">
               <span>المجموع الفرعي</span>
               <span>{total} د.ع</span>
-            </div>
-            <div className="flex justify-between text-gray-600">
-              <span>التوصيل</span>
-              <span>مجاني</span>
             </div>
             <div className="border-t border-gray-100 pt-3 flex justify-between font-bold text-lg text-gray-900">
               <span>الإجمالي</span>

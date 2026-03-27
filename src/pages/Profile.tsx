@@ -1,28 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { User, LogOut, Package, Store, CreditCard, Edit2, Save, X, Heart, CheckCircle, Circle } from 'lucide-react';
+import { User, LogOut, Package, Store, CreditCard, Save, X, Heart, CheckCircle, Circle, Edit, Upload, Tag } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { storage } from '../firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 export const Profile: React.FC = () => {
-  const { currentUser, logout, orders, updateProfile, products, toggleWishlist, updateOrderStatus } = useAppContext();
+  const { currentUser, logout, orders, updateProfile, products, toggleWishlist, updateOrderStatus, isAuthReady, stores, offers } = useAppContext();
   const navigate = useNavigate();
   const location = useLocation();
   const [isEditing, setIsEditing] = useState(location.state?.editMode || false);
+  const [isSaving, setIsSaving] = useState(false);
   const [editName, setEditName] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editDescription, setEditDescription] = useState('');
-  const [editAvatarUrl, setEditAvatarUrl] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editAvatar, setEditAvatar] = useState<File | string | null>(null);
+  const [showBanner, setShowBanner] = useState(true);
 
   useEffect(() => {
-    if (!currentUser) {
+    if (isAuthReady && !currentUser) {
       navigate('/auth');
-    } else {
+    } else if (currentUser) {
       setEditName(currentUser.name);
       setEditEmail(currentUser.email);
       setEditDescription(currentUser.description || '');
-      setEditAvatarUrl(currentUser.avatarUrl || '');
+      setEditPhone(currentUser.phone || '');
     }
-  }, [currentUser, navigate]);
+  }, [isAuthReady, currentUser, navigate]);
 
   useEffect(() => {
     if (location.state?.editMode) {
@@ -34,51 +39,96 @@ export const Profile: React.FC = () => {
 
   if (!currentUser) return null;
 
-  const handleSaveProfile = () => {
-    updateProfile({ 
-      ...currentUser, 
-      name: editName, 
-      email: editEmail,
-      description: editDescription,
-      avatarUrl: editAvatarUrl
-    });
-    setIsEditing(false);
-  };
+  const handleSaveProfile = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
+    
+    try {
+      let finalAvatarUrl = currentUser?.avatarUrl;
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setEditAvatarUrl(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      if (editAvatar && typeof editAvatar !== 'string') {
+        const storageRef = ref(storage, `users/${currentUser?.id}/avatar_${Date.now()}`);
+        const snapshot = await uploadBytes(storageRef, editAvatar);
+        finalAvatarUrl = await getDownloadURL(snapshot.ref);
+      }
+
+      await updateProfile({ 
+        ...currentUser!, 
+        name: editName, 
+        email: editEmail,
+        description: editDescription,
+        phone: editPhone,
+        avatarUrl: finalAvatarUrl
+      });
+      setIsEditing(false);
+      setEditAvatar(null);
+    } catch (error) {
+      console.error("Error updating profile:", error);
+      alert("حدث خطأ أثناء تحديث الملف الشخصي");
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const userOrders = orders.filter(o => o.buyerId === currentUser.id);
   const wishlistProducts = products.filter(p => currentUser.wishlist?.includes(p.id));
 
+  const isIncomplete = !currentUser.description || !currentUser.avatarUrl || !currentUser.phone;
+
   return (
     <div className="max-w-3xl mx-auto space-y-8">
+      {/* Incomplete Profile Banner */}
+      {isIncomplete && showBanner && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-4 animate-in fade-in slide-in-from-top-4 duration-500">
+          <div className="bg-amber-100 p-2 rounded-xl">
+            <User className="h-5 w-5 text-amber-600" />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-sm font-bold text-amber-900">أكمل ملفك الشخصي</h3>
+            <p className="text-xs text-amber-700 mt-1">
+              إضافة صورة ووصف ورقم هاتف يساعدك في الحصول على تجربة أفضل وبناء ثقة أكبر مع الآخرين.
+            </p>
+            <button 
+              onClick={() => setIsEditing(true)}
+              className="mt-2 text-xs font-bold text-amber-900 hover:underline"
+            >
+              تعديل الآن
+            </button>
+          </div>
+          <button 
+            onClick={() => setShowBanner(false)}
+            className="text-amber-400 hover:text-amber-600 transition-colors"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+      )}
+
       {/* Profile Header */}
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 relative">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div className="flex items-center gap-4 w-full md:w-auto">
-            <div className="relative">
-              <div className="bg-indigo-100 w-20 h-20 rounded-full flex items-center justify-center shrink-0 overflow-hidden border-2 border-white shadow-sm">
-                {isEditing && editAvatarUrl ? (
-                  <img src={editAvatarUrl} alt="Preview" className="w-full h-full object-cover" />
+            <div className="relative group">
+              <div 
+                className={`bg-indigo-100 w-24 h-24 rounded-full flex items-center justify-center shrink-0 overflow-hidden border-4 border-white shadow-md transition-all ${isEditing ? 'group-hover:opacity-75 cursor-pointer' : ''}`}
+              >
+                {editAvatar ? (
+                  <img src={typeof editAvatar === 'string' ? editAvatar : URL.createObjectURL(editAvatar)} alt="Preview" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                 ) : currentUser.avatarUrl ? (
-                  <img src={currentUser.avatarUrl} alt={currentUser.name} className="w-full h-full object-cover" />
+                  <img src={currentUser.avatarUrl} alt={currentUser.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                 ) : (
-                  <User className="h-8 w-8 text-indigo-600" />
+                  <User className="h-10 w-10 text-indigo-600" />
                 )}
               </div>
               {isEditing && (
-                <label className="absolute bottom-0 right-0 bg-indigo-600 text-white p-1.5 rounded-full cursor-pointer hover:bg-indigo-700 transition-colors shadow-sm">
-                  <Edit2 className="h-3 w-3" />
-                  <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+                <label className="absolute inset-0 flex items-center justify-center bg-black/50 text-white opacity-0 group-hover:opacity-100 rounded-full cursor-pointer transition-opacity">
+                  <Upload className="h-6 w-6" />
+                  <input 
+                    type="file" 
+                    accept="image/*" 
+                    className="hidden" 
+                    onChange={(e) => setEditAvatar(e.target.files?.[0] || null)}
+                  />
                 </label>
               )}
             </div>
@@ -108,6 +158,17 @@ export const Profile: React.FC = () => {
                     />
                   </div>
                   <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">رقم الهاتف</label>
+                    <input 
+                      type="tel" 
+                      value={editPhone}
+                      onChange={(e) => setEditPhone(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-left text-sm"
+                      placeholder="رقم الهاتف"
+                      dir="ltr"
+                    />
+                  </div>
+                  <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1">نبذة عني</label>
                     <textarea 
                       value={editDescription}
@@ -120,7 +181,10 @@ export const Profile: React.FC = () => {
               ) : (
                 <>
                   <h1 className="text-xl font-bold text-gray-900">{currentUser.name}</h1>
-                  <p className="text-gray-500 text-sm mb-2" dir="ltr">{currentUser.email}</p>
+                  <p className="text-gray-500 text-sm mb-1" dir="ltr">{currentUser.email}</p>
+                  {currentUser.phone && (
+                    <p className="text-gray-500 text-sm mb-2" dir="ltr">{currentUser.phone}</p>
+                  )}
                   {currentUser.description && (
                     <p className="text-gray-600 text-sm mb-2 max-w-md">{currentUser.description}</p>
                   )}
@@ -137,9 +201,13 @@ export const Profile: React.FC = () => {
           <div className="flex items-center gap-2 self-end md:self-auto">
             {isEditing ? (
               <>
-                <button onClick={handleSaveProfile} className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors flex items-center gap-1">
+                <button 
+                  onClick={handleSaveProfile} 
+                  disabled={isSaving}
+                  className={`p-2 ${isSaving ? 'text-gray-400' : 'text-green-600 hover:bg-green-50'} rounded-lg transition-colors flex items-center gap-1`}
+                >
                   <Save className="h-5 w-5" />
-                  <span className="hidden md:inline font-medium">حفظ</span>
+                  <span className="hidden md:inline font-medium">{isSaving ? 'جاري الحفظ...' : 'حفظ'}</span>
                 </button>
                 <button onClick={() => setIsEditing(false)} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-1">
                   <X className="h-5 w-5" />
@@ -149,7 +217,7 @@ export const Profile: React.FC = () => {
             ) : (
               <>
                 <button onClick={() => setIsEditing(true)} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors flex items-center gap-1">
-                  <Edit2 className="h-5 w-5" />
+                  <Edit className="h-5 w-5" />
                   <span className="hidden md:inline font-medium">تعديل</span>
                 </button>
                 <button onClick={() => { logout(); navigate('/auth'); }} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-1">
@@ -176,28 +244,65 @@ export const Profile: React.FC = () => {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {wishlistProducts.map(product => (
-                <div key={product.id} className="border border-gray-100 rounded-xl p-4 hover:border-indigo-100 transition-colors flex gap-4">
-                  <div className="h-20 w-20 bg-gray-100 rounded-lg overflow-hidden shrink-0">
-                    <img src={product.images[0]} alt={product.name} className="w-full h-full object-cover" />
-                  </div>
-                  <div className="flex-1 min-w-0 flex flex-col justify-between">
-                    <div>
-                      <Link to={`/product/${product.id}`} className="font-medium text-gray-900 hover:text-indigo-600 truncate block">
-                        {product.name}
-                      </Link>
-                      <div className="text-sm font-bold text-indigo-600 mt-1">{product.price} د.ع</div>
+              {wishlistProducts.map(product => {
+                const store = stores.find(s => s.id === product.storeId);
+                const activeOffer = offers.find(offer => {
+                  if (!offer.isActive) return false;
+                  if (offer.storeId !== product.storeId) return false;
+                  const now = new Date();
+                  const start = new Date(offer.startDate);
+                  const end = new Date(offer.endDate);
+                  if (now < start || now > end) return false;
+                  if (offer.productIds && offer.productIds.length > 0) {
+                    return offer.productIds.includes(product.id);
+                  }
+                  return true;
+                });
+
+                const discountedPrice = activeOffer ? (
+                  activeOffer.discountType === 'percentage' 
+                    ? product.price * (1 - activeOffer.value / 100)
+                    : Math.max(0, product.price - activeOffer.value)
+                ) : null;
+
+                return (
+                  <div key={product.id} className="border border-gray-100 rounded-xl p-4 hover:border-indigo-100 transition-colors flex gap-4 relative overflow-hidden">
+                    {activeOffer && (
+                      <div className="absolute top-0 right-0 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-bl-lg z-10 flex items-center gap-1">
+                        <Tag className="h-3 w-3" />
+                        {activeOffer.discountType === 'percentage' ? `${activeOffer.value}% خصم` : 'عرض'}
+                      </div>
+                    )}
+                    <div className="h-20 w-20 bg-gray-100 rounded-lg overflow-hidden shrink-0">
+                      <img src={product.imageUrl || product.images?.[0]} alt={product.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                     </div>
-                    <button 
-                      onClick={() => toggleWishlist(product.id)}
-                      className="text-xs text-red-500 hover:text-red-700 font-medium self-start flex items-center gap-1"
-                    >
-                      <X className="h-3 w-3" />
-                      إزالة من القائمة
-                    </button>
+                    <div className="flex-1 min-w-0 flex flex-col justify-between">
+                      <div>
+                        <Link to={`/product/${product.id}`} className="font-medium text-gray-900 hover:text-indigo-600 truncate block">
+                          {product.name}
+                        </Link>
+                        <div className="flex items-center gap-2 mt-1">
+                          {discountedPrice !== null ? (
+                            <>
+                              <span className="text-sm font-bold text-red-600">{Math.round(discountedPrice)} د.ع</span>
+                              <span className="text-[10px] text-gray-400 line-through">{product.price} د.ع</span>
+                            </>
+                          ) : (
+                            <span className="text-sm font-bold text-indigo-600">{product.price} د.ع</span>
+                          )}
+                        </div>
+                      </div>
+                      <button 
+                        onClick={() => toggleWishlist(product.id)}
+                        className="text-xs text-red-500 hover:text-red-700 font-medium self-start flex items-center gap-1"
+                      >
+                        <X className="h-3 w-3" />
+                        إزالة من القائمة
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

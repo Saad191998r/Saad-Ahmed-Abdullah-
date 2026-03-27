@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { 
   Users, Store, ShoppingBag, CreditCard, TrendingUp, AlertCircle, 
-  CheckCircle, XCircle, Search, Filter, BarChart2, DollarSign, Package 
+  CheckCircle, XCircle, Search, BarChart2, DollarSign, Package 
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 
@@ -161,7 +161,7 @@ export const AdminDashboard: React.FC = () => {
                   <div key={store.id} className="flex items-center gap-4 p-3 hover:bg-gray-50 rounded-xl transition-colors">
                     <span className="font-bold text-gray-400 w-6 text-center">#{idx + 1}</span>
                     <div className="h-10 w-10 rounded-full bg-gray-100 overflow-hidden shrink-0">
-                      <img src={store.logoUrl} alt={store.name} className="w-full h-full object-cover" />
+                      <img src={store.logoUrl} alt={store.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                     </div>
                     <div className="flex-1">
                       <div className="font-bold text-gray-900">{store.name}</div>
@@ -213,10 +213,6 @@ export const AdminDashboard: React.FC = () => {
                 className="w-full pr-10 pl-4 py-2 border border-gray-200 rounded-lg outline-none focus:border-indigo-500"
               />
             </div>
-            <button className="px-4 py-2 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 flex items-center gap-2">
-              <Filter className="h-4 w-4" />
-              تصفية
-            </button>
           </div>
 
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -243,7 +239,7 @@ export const AdminDashboard: React.FC = () => {
                       <tr key={store.id} className="hover:bg-gray-50 transition-colors">
                         <td className="p-4 flex items-center gap-3">
                           <div className="h-10 w-10 rounded-full bg-gray-100 overflow-hidden shrink-0">
-                            <img src={store.logoUrl} alt={store.name} className="w-full h-full object-cover" />
+                            <img src={store.logoUrl} alt={store.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                           </div>
                           <div>
                             <div className="font-medium text-gray-900">{store.name}</div>
@@ -308,7 +304,7 @@ export const AdminDashboard: React.FC = () => {
                     <td className="p-4 flex items-center gap-3">
                       <div className="h-8 w-8 rounded-full bg-gray-100 overflow-hidden shrink-0">
                         {seller?.avatarUrl ? (
-                          <img src={seller.avatarUrl} alt={seller.name} className="w-full h-full object-cover" />
+                          <img src={seller.avatarUrl} alt={seller.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-gray-500 font-bold">{seller?.name.charAt(0)}</div>
                         )}
@@ -383,7 +379,7 @@ export const AdminDashboard: React.FC = () => {
                   <div key={product.id} className="flex items-center gap-4 p-3 border border-gray-50 rounded-xl">
                     <span className="font-bold text-gray-400 w-6 text-center">#{idx + 1}</span>
                     <div className="h-12 w-12 rounded bg-gray-100 overflow-hidden shrink-0">
-                      <img src={product.images[0]} alt={product.name} className="w-full h-full object-cover" />
+                      <img src={product.imageUrl || product.images[0]} alt={product.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                     </div>
                     <div className="flex-1">
                       <div className="font-medium text-gray-900">{product.name}</div>
