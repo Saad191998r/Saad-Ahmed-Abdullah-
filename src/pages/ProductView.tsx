@@ -1,8 +1,78 @@
 import React, { useState, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
-import { Store, ShoppingCart, Minus, Plus, AlertCircle, Star, MessageSquare, MessageCircle, CheckCircle, Heart, Share2, UserPlus, UserCheck, ChevronLeft, ChevronRight, Tag } from 'lucide-react';
+import { Store, ShoppingCart, Minus, Plus, AlertCircle, Star, MessageSquare, MessageCircle, CheckCircle, Heart, Share2, UserPlus, UserCheck, ChevronLeft, ChevronRight, Tag, X, ZoomIn } from 'lucide-react';
 import { ShareModal } from '../components/ShareModal';
+import { motion, AnimatePresence } from 'motion/react';
+
+// Thumbnail Component
+const Thumbnail: React.FC<{ src: string; alt: string; onClick: () => void; isActive: boolean }> = ({ src, alt, onClick, isActive }) => {
+  const [isLoaded, setIsLoaded] = useState(false);
+  return (
+    <button
+      onClick={onClick}
+      className={`relative h-16 w-16 rounded-lg overflow-hidden border-2 shrink-0 transition-all ${
+        isActive ? 'border-indigo-600 ring-2 ring-indigo-100' : 'border-transparent hover:border-gray-200'
+      }`}
+    >
+      {!isLoaded && <div className="w-full h-full bg-gray-200 animate-pulse" />}
+      <img 
+        src={src} 
+        alt={alt} 
+        className={`w-full h-full object-cover ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
+        onLoad={() => setIsLoaded(true)}
+        referrerPolicy="no-referrer"
+      />
+    </button>
+  );
+};
+
+// FullScreenImageModal Component
+const FullScreenImageModal: React.FC<{
+  images: string[];
+  initialIndex: number;
+  onClose: () => void;
+}> = ({ images, initialIndex, onClose }) => {
+  const [currentIndex, setCurrentIndex] = useState(initialIndex);
+  const [scale, setScale] = useState(1);
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center p-4"
+      >
+        <button onClick={onClose} className="absolute top-4 right-4 text-white p-2 bg-white/10 rounded-full hover:bg-white/20">
+          <X className="h-8 w-8" />
+        </button>
+
+        <div className="flex-1 w-full flex items-center justify-center overflow-hidden">
+          <motion.img
+            src={images[currentIndex]}
+            alt="Full screen"
+            className="max-w-full max-h-full object-contain cursor-zoom-in"
+            style={{ scale }}
+            onClick={() => setScale(scale === 1 ? 2 : 1)}
+          />
+        </div>
+
+        <div className="h-20 w-full flex gap-2 overflow-x-auto justify-center p-2">
+          {images.map((img, idx) => (
+            <button
+              key={idx}
+              onClick={() => setCurrentIndex(idx)}
+              className={`h-16 w-16 rounded-lg overflow-hidden border-2 ${idx === currentIndex ? 'border-white' : 'border-transparent opacity-50'}`}
+            >
+              <img src={img} alt={`Thumb ${idx}`} className="w-full h-full object-cover" />
+            </button>
+          ))}
+        </div>
+      </motion.div>
+    </AnimatePresence>
+  );
+};
 
 export const ProductView: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -10,7 +80,9 @@ export const ProductView: React.FC = () => {
   const { products, stores, subscriptions, addToCart, currentUser, orders, addReview, users, createChat, toggleWishlist, toggleFollowStore, offers } = useAppContext();
   const [quantity, setQuantity] = useState(1);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [isFullScreenOpen, setIsFullScreenOpen] = useState(false);
   const [rating, setRating] = useState(5);
+  // ... (rest of the component)
 
   React.useEffect(() => {
     setCurrentImageIndex(0);
@@ -143,25 +215,28 @@ export const ProductView: React.FC = () => {
     <div className="space-y-8">
       <div className="bg-white rounded-2xl shadow-sm overflow-hidden flex flex-col md:flex-row">
         <div className="md:w-1/2 flex flex-col bg-gray-50">
-          <div className="relative group aspect-square w-full bg-white flex items-center justify-center overflow-hidden">
+          <div className="relative group aspect-square w-full bg-white flex items-center justify-center overflow-hidden cursor-pointer" onClick={() => setIsFullScreenOpen(true)}>
             <img 
               src={productImages[currentImageIndex]} 
               alt={`${product.name} ${currentImageIndex + 1}`} 
               className="w-full h-full object-contain transition-all duration-500" 
               referrerPolicy="no-referrer" 
             />
+            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+              <ZoomIn className="h-12 w-12 text-white" />
+            </div>
             
             {productImages.length > 1 && (
               <>
                 {/* Navigation Arrows */}
                 <button 
-                  onClick={() => setCurrentImageIndex((prev) => (prev === 0 ? productImages.length - 1 : prev - 1))}
+                  onClick={(e) => { e.stopPropagation(); setCurrentImageIndex((prev) => (prev === 0 ? productImages.length - 1 : prev - 1))}}
                   className="absolute left-4 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white p-2 rounded-full shadow-lg transition-all opacity-0 group-hover:opacity-100 text-gray-800 z-10"
                 >
                   <ChevronLeft className="h-6 w-6" />
                 </button>
                 <button 
-                  onClick={() => setCurrentImageIndex((prev) => (prev === productImages.length - 1 ? 0 : prev + 1))}
+                  onClick={(e) => { e.stopPropagation(); setCurrentImageIndex((prev) => (prev === productImages.length - 1 ? 0 : prev + 1))}}
                   className="absolute right-4 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white p-2 rounded-full shadow-lg transition-all opacity-0 group-hover:opacity-100 text-gray-800 z-10"
                 >
                   <ChevronRight className="h-6 w-6" />
@@ -172,7 +247,7 @@ export const ProductView: React.FC = () => {
                   {productImages.map((_, idx) => (
                     <button
                       key={idx}
-                      onClick={() => setCurrentImageIndex(idx)}
+                      onClick={(e) => { e.stopPropagation(); setCurrentImageIndex(idx)}}
                       className={`h-1.5 rounded-full transition-all ${idx === currentImageIndex ? 'bg-indigo-600 w-6' : 'bg-gray-300 w-1.5 hover:bg-gray-400'}`}
                     />
                   ))}
@@ -181,25 +256,26 @@ export const ProductView: React.FC = () => {
             )}
           </div>
 
+          {isFullScreenOpen && (
+            <FullScreenImageModal 
+              images={productImages} 
+              initialIndex={currentImageIndex} 
+              onClose={() => setIsFullScreenOpen(false)} 
+            />
+          )}
+
           {/* Thumbnail Strip */}
           {productImages.length > 1 && (
             <div className="p-4 bg-white border-t border-gray-100">
               <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
                 {productImages.map((img, idx) => (
-                  <button
+                  <Thumbnail
                     key={idx}
+                    src={img}
+                    alt={`Thumbnail ${idx + 1}`}
                     onClick={() => setCurrentImageIndex(idx)}
-                    className={`relative h-16 w-16 rounded-lg overflow-hidden border-2 shrink-0 transition-all ${
-                      idx === currentImageIndex ? 'border-indigo-600 ring-2 ring-indigo-100' : 'border-transparent hover:border-gray-200'
-                    }`}
-                  >
-                    <img 
-                      src={img} 
-                      alt={`Thumbnail ${idx + 1}`} 
-                      className="w-full h-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                  </button>
+                    isActive={idx === currentImageIndex}
+                  />
                 ))}
               </div>
             </div>

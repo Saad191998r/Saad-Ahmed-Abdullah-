@@ -29,6 +29,7 @@ export interface Store {
   shippingPolicy?: string;
   featuredProductIds?: string[];
   views?: number;
+  reviews?: Review[];
 }
 
 export interface Review {

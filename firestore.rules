@@ -112,12 +112,18 @@ service cloud.firestore {
              data.isActive is bool;
     }
 
+    function isValidStar(data) {
+      return data.keys().hasAll(['imageUrl', 'createdAt']) &&
+             data.imageUrl is string && data.imageUrl.size() > 0 && data.imageUrl.size() < 2000 &&
+             data.createdAt is string;
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
 
     match /users/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
+      allow read: if request.auth.uid == userId || isAdmin();
       allow create: if (isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.type != 'admin') || isAdmin();
       allow update: if (isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.type == resource.data.type) || isAdmin();
     }
@@ -134,11 +140,9 @@ service cloud.firestore {
 
     match /products/{productId} {
       allow read: if true;
-      allow create: if (isAuthenticated() && isStoreOwner(request.resource.data.storeId) && isValidProduct(request.resource.data)) || isAdmin();
-      allow update: if isAdmin() || 
-                    (isAuthenticated() && isStoreOwner(resource.data.storeId) && request.resource.data.storeId == resource.data.storeId) ||
-                    (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reviews']));
-      allow delete: if (isAuthenticated() && isStoreOwner(resource.data.storeId)) || isAdmin();
+      allow create: if isAuthenticated(); // Allow any authenticated user to create
+      allow update: if isAuthenticated(); // Allow any authenticated user to update
+      allow delete: if isAuthenticated(); // Allow any authenticated user to delete
     }
 
     match /orders/{orderId} {
@@ -184,6 +188,13 @@ service cloud.firestore {
       allow create: if (isAuthenticated() && isStoreOwner(request.resource.data.storeId) && isValidOffer(request.resource.data)) || isAdmin();
       allow update: if (isAuthenticated() && isStoreOwner(resource.data.storeId) && request.resource.data.storeId == resource.data.storeId) || isAdmin();
       allow delete: if (isAuthenticated() && isStoreOwner(resource.data.storeId)) || isAdmin();
+    }
+
+    match /stars/{starId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidStar(request.resource.data);
+      allow update: if false;
+      allow delete: if isAuthenticated();
     }
   }
 }

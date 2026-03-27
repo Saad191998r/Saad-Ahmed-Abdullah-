@@ -176,6 +176,16 @@
         "isActive": { "type": "boolean" }
       },
       "required": ["storeId", "name", "type", "discountType", "value", "startDate", "endDate", "isFollowersOnly", "isActive"]
+    },
+    "Star": {
+      "title": "Star",
+      "description": "A collection to store image URLs.",
+      "type": "object",
+      "properties": {
+        "imageUrl": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["imageUrl", "createdAt"]
     }
   },
   "firestore": {
@@ -214,6 +224,10 @@
     "offers/{offerId}": {
       "schema": "Offer",
       "description": "Offers collection"
+    },
+    "stars/{starId}": {
+      "schema": "Star",
+      "description": "Stars collection for image URLs"
     }
   }
 }

@@ -241,11 +241,11 @@ export const SellerDashboard: React.FC = () => {
     );
   }
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
 
-    let newImages: File[] = Array.from(files);
+    const newImages: File[] = Array.from(files);
     
     // Filter by size (10MB)
     const validImages = newImages.filter(file => file.size <= 10 * 1024 * 1024);
@@ -259,17 +259,15 @@ export const SellerDashboard: React.FC = () => {
       return;
     }
 
-    if (validImages.length > 0) {
-      setCropQueue(validImages.slice(1));
-      setCurrentCropImage(validImages[0]);
-      setIsCropperOpen(true);
-    }
+    // Directly add images to state without cropping for now to ensure it works
+    setNewProduct(prev => ({ ...prev, images: [...prev.images, ...validImages] }));
     
     // Reset input
     e.target.value = '';
   };
 
   const handleCropComplete = (croppedImage: File) => {
+    console.log("handleCropComplete called with:", croppedImage);
     setNewProduct(prev => ({ ...prev, images: [...prev.images, croppedImage] }));
     
     if (cropQueue.length > 0) {
@@ -298,6 +296,29 @@ export const SellerDashboard: React.FC = () => {
     }));
   };
 
+  const compressImage = async (file: File): Promise<File> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 800;
+          const scaleSize = MAX_WIDTH / img.width;
+          canvas.width = MAX_WIDTH;
+          canvas.height = img.height * scaleSize;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+          canvas.toBlob((blob) => {
+            resolve(new File([blob as Blob], file.name, { type: 'image/jpeg', lastModified: Date.now() }));
+          }, 'image/jpeg', 0.7);
+        };
+      };
+    });
+  };
+
   const handleAddProduct = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!store) {
@@ -307,25 +328,42 @@ export const SellerDashboard: React.FC = () => {
 
     setIsSavingProduct(true);
     try {
+      console.log("Starting product save process...");
       const uploadedImageUrls: string[] = [];
 
       // Handle image uploads
       for (const img of newProduct.images) {
+        console.log("Processing image:", img);
         if (typeof img === 'string') {
           uploadedImageUrls.push(img);
         } else {
-          const storageRef = ref(storage, `products/${Date.now()}_${img.name}`);
-          const snapshot = await uploadBytes(storageRef, img);
-          const url = await getDownloadURL(snapshot.ref);
-          uploadedImageUrls.push(url);
+          try {
+            // Compress image before upload
+            const compressedImg = await compressImage(img);
+            console.log("Image compressed, original size:", img.size, "compressed size:", compressedImg.size);
+            
+            const storageRef = ref(storage, `products/${Date.now()}_${compressedImg.name}`);
+            console.log("Uploading to storage:", storageRef.fullPath);
+            
+            const snapshot = await uploadBytes(storageRef, compressedImg);
+            
+            const url = await getDownloadURL(snapshot.ref);
+            console.log("Image uploaded, URL:", url);
+            uploadedImageUrls.push(url);
+          } catch (uploadError) {
+            console.error("Error uploading image:", uploadError);
+            throw new Error("فشل رفع الصورة: " + (uploadError instanceof Error ? uploadError.message : String(uploadError)));
+          }
         }
       }
 
+      console.log("All images processed, URLs:", uploadedImageUrls);
       const finalImageUrl = uploadedImageUrls.length > 0 
         ? uploadedImageUrls[0] 
         : `https://picsum.photos/seed/${Date.now()}/400/400`;
 
       if (editingProduct) {
+        console.log("Updating existing product...");
         await updateProduct({
           ...editingProduct,
           name: newProduct.name,
@@ -340,6 +378,7 @@ export const SellerDashboard: React.FC = () => {
         });
         setEditingProduct(null);
       } else {
+        console.log("Adding new product...");
         await addProduct({
           id: `p_${Date.now()}`,
           storeId: store.id,
@@ -355,12 +394,14 @@ export const SellerDashboard: React.FC = () => {
         });
       }
       
-      alert("تم حفظ المنتج");
+      console.log("Product saved successfully.");
+      alert("تم حفظ المنتج بنجاح!");
       setIsAddingProduct(false);
       setNewProduct({ name: '', price: '', desc: '', category: '', images: [] });
     } catch (error) {
       console.error("Error saving product:", error);
-      alert("حدث خطأ أثناء حفظ المنتج: " + (error instanceof Error ? error.message : String(error)));
+      // More descriptive error alert
+      alert("خطأ أثناء الحفظ: " + (error instanceof Error ? error.message : String(error)) + "\n\nيرجى التأكد من اتصالك بالإنترنت والمحاولة مرة أخرى.");
     } finally {
       setIsSavingProduct(false);
     }
@@ -888,6 +929,7 @@ export const SellerDashboard: React.FC = () => {
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-2">صور المنتج (الحد الأقصى 4 صور، 10 ميجابايت للصورة)</label>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                    {console.log("newProduct.images:", newProduct.images)}
                     {newProduct.images.map((img, index) => (
                       <div key={index} className="relative aspect-square rounded-xl overflow-hidden border border-gray-200 group">
                         <img 

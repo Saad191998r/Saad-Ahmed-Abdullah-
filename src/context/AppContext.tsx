@@ -87,6 +87,7 @@ interface AppContextType extends AppState {
   deleteOffer: (offerId: string) => Promise<void>;
   toggleOfferStatus: (offerId: string) => Promise<void>;
   incrementStoreViews: (storeId: string) => Promise<void>;
+  addStoreReview: (storeId: string, review: Omit<Review, 'id' | 'date'>) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -114,6 +115,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
+        console.log("firebaseUser:", firebaseUser.uid);
         // Set up a real-time listener for the current user document
         const unsubUserDoc = onSnapshot(doc(db, 'users', firebaseUser.uid), (docSnap) => {
           if (docSnap.exists()) {
@@ -690,13 +692,34 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  const addStoreReview = async (storeId: string, reviewData: Omit<Review, 'id' | 'date'>) => {
+    if (!currentUser) return;
+    try {
+      const newReview: Review = {
+        ...reviewData,
+        id: `rev_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        date: new Date().toISOString(),
+        userName: currentUser.name,
+        userAvatar: currentUser.avatarUrl || ''
+      };
+
+      const store = stores.find(s => s.id === storeId);
+      if (store) {
+        const updatedReviews = [...(store.reviews || []), newReview];
+        await updateDoc(doc(db, 'stores', storeId), { reviews: updatedReviews });
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `stores/${storeId}`);
+    }
+  };
+
   return (
     <AppContext.Provider value={{
       currentUser, users, stores, products, cart, orders, subscriptions, chats, messages, notifications, offers, isAuthReady,
       login, logout, register, addToCart, removeFromCart, clearCart, placeOrder,
       addStore, updateStore, toggleFollowStore, addProduct, updateProduct, deleteProduct, updateOrderStatus,
       paySubscription, cancelSubscription, updateProfile, addReview, sendMessage, createChat, markNotificationAsRead, markMessagesAsRead, toggleWishlist,
-      addOffer, updateOffer, deleteOffer, toggleOfferStatus, incrementStoreViews
+      addOffer, updateOffer, deleteOffer, toggleOfferStatus, incrementStoreViews, addStoreReview
     }}>
       {children}
     </AppContext.Provider>

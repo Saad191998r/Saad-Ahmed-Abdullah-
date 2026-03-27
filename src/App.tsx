@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { AppProvider } from './context/AppContext';
 import { Layout } from './components/Layout';
@@ -21,6 +21,7 @@ import { AdminDashboard } from './pages/AdminDashboard';
 import { Settings } from './pages/Settings';
 import { Privacy } from './pages/Privacy';
 import { Support } from './pages/Support';
+import { SplashScreen } from './components/SplashScreen';
 
 const router = createBrowserRouter([
   {
@@ -47,9 +48,12 @@ const router = createBrowserRouter([
 ]);
 
 export default function App() {
+  const [showSplash, setShowSplash] = useState(true);
+
   return (
     <AppProvider>
-      <RouterProvider router={router} />
+      {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
+      {!showSplash && <RouterProvider router={router} />}
     </AppProvider>
   );
 }
